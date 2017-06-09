@@ -1,3 +1,7 @@
+/* These BLEP routines were coded by aciddose, and he agreed on 
+** using the WTFPL license for the code.
+*/
+
 #ifndef __PT_BLEP_H
 #define __PT_BLEP_H
 

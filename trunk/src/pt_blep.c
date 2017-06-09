@@ -1,3 +1,7 @@
+/* These BLEP routines were coded by aciddose, and he agreed on 
+** using the WTFPL license for the code.
+*/
+
 #include <stdint.h>
 #include "pt_blep.h"
 #include "pt_helpers.h"
