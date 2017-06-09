@@ -1,3 +1,7 @@
+/* The low-pass/high-pass routines were coded by aciddose, and he agreed on 
+** using the WTFPL license for the code.
+*/
+
 #ifndef __PT_AUDIO_H
 #define __PT_AUDIO_H
 
