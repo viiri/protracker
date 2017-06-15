@@ -44,9 +44,9 @@ uint8_t fullscreen = false, vsync60HzPresent = false;
 
     // crash handler
     static LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *ptr);
+    static uint8_t backupMadeAfterCrash = false;
 #endif
 
-static uint8_t backupMadeAfterCrash = false;
 static uint64_t next60HzTime_64bit;
 static SDL_TimerID timer50Hz;
 static module_t *tempMod;
