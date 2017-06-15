@@ -193,6 +193,10 @@ int8_t loadConfig(void)
                 else if (strncmp(&configBuffer[11], "2X", 2) == 0) ptConfig.videoScaleFactor = 2;
                 else if (strncmp(&configBuffer[11], "3X", 2) == 0) ptConfig.videoScaleFactor = 3;
                 else if (strncmp(&configBuffer[11], "4X", 2) == 0) ptConfig.videoScaleFactor = 4;
+                else if (strncmp(&configBuffer[11], "5X", 2) == 0) ptConfig.videoScaleFactor = 5;
+                else if (strncmp(&configBuffer[11], "6X", 2) == 0) ptConfig.videoScaleFactor = 6;
+                else if (strncmp(&configBuffer[11], "7X", 2) == 0) ptConfig.videoScaleFactor = 7;
+                else if (strncmp(&configBuffer[11], "8X", 2) == 0) ptConfig.videoScaleFactor = 8;
             }
 
             // BLEP
