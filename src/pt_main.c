@@ -46,8 +46,8 @@ uint8_t fullscreen = false, vsync60HzPresent = false;
     static LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *ptr);
 #endif
 
+static uint8_t backupMadeAfterCrash = false;
 static uint64_t next60HzTime_64bit;
-
 static SDL_TimerID timer50Hz;
 static module_t *tempMod;
 
@@ -675,39 +675,44 @@ static LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *ptr)
 
     (void)(ptr);
 
-    // get executable path
-    GetModuleFileNameA(NULL, filePath, MAX_PATH);
-
-    // cut off executable
-    fileNameLength = strlen(filePath);
-    if (fileNameLength)
+    if (backupMadeAfterCrash == false)
     {
-        filePathPtr = filePath + fileNameLength;
-        while (filePathPtr != filePath)
+        // get executable path
+        GetModuleFileNameA(NULL, filePath, MAX_PATH);
+
+        // cut off executable
+        fileNameLength = strlen(filePath);
+        if (fileNameLength)
         {
-            if (*--filePathPtr == '\\')
+            filePathPtr = filePath + fileNameLength;
+            while (filePathPtr != filePath)
             {
-                *(filePathPtr++) = '\0';
-                break;
+                if (*--filePathPtr == '\\')
+                {
+                    *(filePathPtr++) = '\0';
+                    break;
+                }
             }
+
+            // find a free filename
+            for (i = 1; i < 1000; ++i)
+            {
+                sprintf(fileName, "%s\\BACKUP%03d.MOD", filePath, i);
+                if (stat(fileName, &statBuffer) != 0)
+                    break; // filename OK
+            }
+
+            if (i != 1000)
+                modSave(fileName);
         }
 
-        // find a free filename
-        for (i = 1; i < 1000; ++i)
-        {
-            sprintf(fileName, "%s\\BACKUP%03d.MOD", filePath, i);
-            if (stat(fileName, &statBuffer) != 0)
-                break; // filename OK
-        }
+        backupMadeAfterCrash = true;
 
-        if (i != 1000)
-            modSave(fileName);
+        MessageBoxA(hWnd, "Oh no!\nProTracker has crashed...\n\nA backup .MOD was hopefully " \
+                          "saved to the program directory.\n\nPlease report this to 8bitbubsy " \
+                          "(IRC or olav.sorensen@live.no).\nTry to mention what you did before the crash happened.",
+                          "Critical Error", MB_OK | MB_ICONERROR);
     }
-
-    MessageBoxA(hWnd, "Oh no!\nProTracker has crashed...\n\nA backup .MOD was hopefully " \
-                      "saved to the program directory.\n\nPlease report this to 8bitbubsy " \
-                      "(IRC or email).\nTry to mention what you did before the crash happened.",
-                      "Critical Error", MB_OK | MB_ICONERROR);
 
     return (EXCEPTION_CONTINUE_SEARCH);
 }
