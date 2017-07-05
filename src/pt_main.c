@@ -37,14 +37,14 @@ uint8_t fullscreen = false, vsync60HzPresent = false;
 // -----------------------------
 
 #ifdef _WIN32
-    // for taking control over windows key and numlock on keyboard if app has focus
-    uint8_t windowsKeyIsDown;
-    HHOOK g_hKeyboardHook;
-    HWND hWnd;
+// for taking control over windows key and numlock on keyboard if app has focus
+uint8_t windowsKeyIsDown;
+HHOOK g_hKeyboardHook;
+HWND hWnd;
 
-    // crash handler
-    static LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *ptr);
-    static uint8_t backupMadeAfterCrash = false;
+// crash handler
+static LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *ptr);
+static uint8_t backupMadeAfterCrash = false;
 #endif
 
 static uint64_t next60HzTime_64bit;
@@ -307,8 +307,8 @@ int main(int argc, char *argv[])
     terminalPrintf("- Audio latency: ~%.2fms\n", (editor.audioBufferSize / (float)(ptConfig.soundFrequency)) * 1000.0f);
     terminalPrintf("\nEverything is up and running.\n\n");
 
-    // load a .MOD from the command arguments if passed
-    if ((argc >= 2) && (strlen(argv[1]) > 0))
+    // load a .MOD from the command arguments if passed (also ignore OS X < 10.9 -psn argument on double-click launch)
+    if (((argc >= 2) && (strlen(argv[1]) > 0)) && !((argc == 2) && (!strncmp(argv[1], "-psn_", 5))))
     {
         loadModFromArg(argv[1]);
     }
