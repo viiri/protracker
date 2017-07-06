@@ -77,7 +77,7 @@ void exitGetTextLine(uint8_t updateValue)
     if (editor.ui.diskOpScreenShown && (editor.ui.editObject == PTB_DO_DATAPATH))
         diskOpSetPath(editor.currPath, DISKOP_CACHE);
 
-    if (editor.ui.getLineType != TEXT_EDIT_STRING)
+    if (editor.ui.editTextType != TEXT_EDIT_STRING)
     {
         if (editor.ui.dstPos != editor.ui.numLen)
             removeTextEditMarker();
@@ -93,13 +93,13 @@ void exitGetTextLine(uint8_t updateValue)
             editor.ui.updatePosEd = true;
     }
 
-    editor.ui.getLineFlag = false;
+    editor.ui.editTextFlag = false;
     editor.ui.lineCurX = 0;
     editor.ui.lineCurY = 0;
     editor.ui.editPos = NULL;
     editor.ui.dstPos  = 0;
 
-    if (editor.ui.getLineType == TEXT_EDIT_STRING)
+    if (editor.ui.editTextType == TEXT_EDIT_STRING)
     {
         if (editor.ui.dstOffset != NULL)
             *editor.ui.dstOffset = '\0';
@@ -587,7 +587,7 @@ void exitGetTextLine(uint8_t updateValue)
         pointerSetPreviousMode();
     }
 
-    editor.ui.getLineType = 0;
+    editor.ui.editTextType = 0;
 }
 
 void getTextLine(int16_t editObject)
@@ -599,8 +599,8 @@ void getTextLine(int16_t editObject)
     editor.ui.dstPtr      = editor.ui.showTextPtr;
     editor.ui.editPos     = editor.ui.showTextPtr;
     editor.ui.dstPos      = 0;
-    editor.ui.getLineFlag = true;
-    editor.ui.getLineType = TEXT_EDIT_STRING;
+    editor.ui.editTextFlag = true;
+    editor.ui.editTextType = TEXT_EDIT_STRING;
     editor.ui.editObject  = editObject;
 
     if (editor.ui.dstOffset != NULL)
@@ -624,8 +624,8 @@ void getNumLine(uint8_t type, int16_t editObject)
     editor.ui.lineCurY    =  (editor.ui.editTextPos / 40) + 5;
     editor.ui.lineCurX    = ((editor.ui.editTextPos % 40) * FONT_CHAR_W) + 4;
     editor.ui.dstPos      = 0;
-    editor.ui.getLineFlag = true;
-    editor.ui.getLineType = type;
+    editor.ui.editTextFlag = true;
+    editor.ui.editTextType = type;
     editor.ui.editObject  = editObject;
 
     renderTextEditMarker();
@@ -637,7 +637,7 @@ void handleEditKeys(SDL_Scancode keyEntry, int8_t normalMode)
     SDL_Keycode keyCode;
     note_t *note;
 
-    if (editor.ui.getLineFlag)
+    if (editor.ui.editTextFlag)
         return;
 
     keyCode = scanCodeToUSKey(keyEntry);
@@ -771,13 +771,13 @@ void handleEditKeys(SDL_Scancode keyEntry, int8_t normalMode)
             {
                 note = &modEntry->patterns[modEntry->currPattern][(modEntry->currRow * AMIGA_VOICES) + editor.cursor.channel];
 
-                if (!input.keyb.altKeyDown)
+                if (!input.keyb.leftAltKeyDown)
                 {
                     note->sample = 0;
                     note->period = 0;
                 }
 
-                if (input.keyb.shiftKeyDown || input.keyb.altKeyDown)
+                if (input.keyb.leftShiftKeyDown || input.keyb.leftAltKeyDown)
                 {
                     note->command = 0;
                     note->param   = 0;
@@ -800,7 +800,7 @@ uint8_t handleSpecialKeys(SDL_Scancode keyEntry)
 {
     note_t *note, *prevNote;
 
-    if (input.keyb.altKeyDown)
+    if (input.keyb.leftAltKeyDown)
     {
         note     = &modEntry->patterns[modEntry->currPattern][(modEntry->currRow * AMIGA_VOICES) + editor.cursor.channel];
         prevNote = &modEntry->patterns[modEntry->currPattern][(((modEntry->currRow - 1) & 0x3F) * AMIGA_VOICES) + editor.cursor.channel];

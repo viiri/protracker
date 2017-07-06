@@ -6,6 +6,8 @@
 #include <SDL2/SDL.h>
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <unistd.h> // chdir()
 #endif
 #include <sys/stat.h>
 #include "pt_header.h"
@@ -24,6 +26,7 @@
 #include "pt_terminal.h"
 
 extern int8_t forceMixerOff; // pt_audio.c
+extern uint32_t palette[PALETTE_NUM]; // pt_palette.c
 
 uint8_t bigEndian;  // globalized
 module_t *modEntry; // globalized
@@ -51,95 +54,17 @@ static uint64_t next60HzTime_64bit;
 static SDL_TimerID timer50Hz;
 static module_t *tempMod;
 
+#ifdef __APPLE__
+void osxSetDirToProgramDirFromArgs(char **argv);
+#endif
 static void handleInput(void);
 static int8_t initializeVars(void);
 static void loadModFromArg(char *arg);
 static void handleSigTerm(void);
 static void loadDroppedFile(char *fullPath, uint32_t fileNameLen);
-
-void cleanUp(void) // never call this inside the main loop!
-{
-    audioClose();
-
-    SDL_RemoveTimer(timer50Hz);
-
-    modFree();
-
-    free(editor.rowVisitTable);
-    free(editor.ui.pattNames);
-    free(editor.tempSample);
-    free(editor.scopeBuffer);
-
-    deAllocSamplerVars();
-    deAllocDiskOpVars();
-    freeDiskOpFileMem();
-    freeBMPs();
-    terminalFree();
-
-    free(ptConfig.defaultDiskOpDir);
-    videoClose();
-    freeSprites();
-
-#ifdef _WIN32
-    UnhookWindowsHookEx(g_hKeyboardHook);
-#endif
-}
-
-void syncThreadTo60Hz(void)
-{
-    // this routine almost never delays if we have 60Hz vsync
-
-    uint64_t timeNow_64bit;
-    double delayMs_f, perfFreq_f, frameLength_f;
-
-    perfFreq_f = (double)(SDL_GetPerformanceFrequency()); // should be safe for double
-    if (perfFreq_f == 0.0)
-        return; // panic!
-
-    timeNow_64bit = SDL_GetPerformanceCounter();
-    if (next60HzTime_64bit > timeNow_64bit)
-    {
-        delayMs_f = (double)(next60HzTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f); // should be safe for double
-        SDL_Delay((uint32_t)(delayMs_f + 0.5));
-    }
-
-    frameLength_f = perfFreq_f / VBLANK_HZ;
-    next60HzTime_64bit += (uint64_t)(frameLength_f + 0.5);
-}
-
-void readMouseXY(void)
-{
-    int16_t x, y;
-    int32_t mx, my;
-    double mx_f, my_f;
-
-    SDL_PumpEvents();
-    SDL_GetMouseState(&mx, &my);
-
-    if (input.mouse.scaleX_f != 1.0)
-    {
-        mx_f = mx * input.mouse.scaleX_f;
-        mx = (int32_t)(mx_f + 0.5);
-    }
-
-    if (input.mouse.scaleY_f != 1.0)
-    {
-        my_f = my * input.mouse.scaleY_f;
-        my = (int32_t)(my_f + 0.5);
-    }
-
-    /* clamp to edges */
-    mx = CLAMP(mx, 0, SCREEN_W - 1);
-    my = CLAMP(my, 0, SCREEN_H - 1);
-
-    x = (int16_t)(mx);
-    y = (int16_t)(my);
-
-    input.mouse.x = x;
-    input.mouse.y = y;
-
-    setSpritePos(SPRITE_MOUSE_POINTER, x, y);
-}
+void cleanUp(void);
+void syncThreadTo60Hz(void);
+void readMouseXY(void);
 
 int main(int argc, char *argv[])
 {
@@ -193,6 +118,10 @@ int main(int argc, char *argv[])
     g_hKeyboardHook  = SetWindowsHookEx(WH_KEYBOARD_LL, lowLevelKeyboardProc, GetModuleHandle(NULL), 0);
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
     SetUnhandledExceptionFilter(ExceptionHandler); // crash handler
+#endif
+
+#ifdef __APPLE__
+    osxSetDirToProgramDirFromArgs(argv);
 #endif
 
     if (!initializeVars())
@@ -336,6 +265,20 @@ int main(int argc, char *argv[])
     // setup timer stuff
     next60HzTime_64bit = SDL_GetPerformanceCounter() + (uint64_t)(((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5);
 
+    {
+        uint8_t r, g, b;
+
+        r = RGB_R(palette[PAL_QADSCP]);
+        g = RGB_G(palette[PAL_QADSCP]);
+        b = RGB_B(palette[PAL_QADSCP]);
+
+        r = (uint8_t)(r / 3.5);
+        g = (uint8_t)(g / 3.5);
+        b = (uint8_t)(b / 3.5);
+
+        palette[PAL_SMPMRK] = TO_RGB(r, g, b);
+    }
+
     while (editor.programRunning)
     {
         syncThreadTo60Hz();
@@ -372,11 +315,23 @@ int main(int argc, char *argv[])
 
 static void handleInput(void)
 {
+    char inputChar;
     SDL_Event inputEvent;
 
     while (SDL_PollEvent(&inputEvent))
     {
-        if (inputEvent.type == SDL_MOUSEWHEEL)
+        if (editor.ui.editTextFlag && (inputEvent.type == SDL_TEXTINPUT))
+        {
+            // text input when editing texts/numbers
+
+            inputChar = inputEvent.text.text[0];
+            if (inputChar == '\0')
+                continue;
+
+            handleTextEditInputChar(inputChar);
+            continue; // continue SDL event loop
+        }
+        else if (inputEvent.type == SDL_MOUSEWHEEL)
         {
             if (inputEvent.wheel.y < 0)
                 mouseWheelDownHandler();
@@ -639,7 +594,7 @@ void resetAllScreens(void)
         displaySample();
     }
 
-    if (editor.ui.getLineFlag)
+    if (editor.ui.editTextFlag)
         exitGetTextLine(EDIT_TEXT_NO_UPDATE);
 }
 
@@ -762,7 +717,7 @@ static void loadDroppedFile(char *fullPath, uint32_t fileNameLen)
         fullPath[i] = (char)(toupper(fullPath[i]));
 
     // make a new pointer point to filename (strip path)
-    fileName = strrchr(fullPath, '\\');
+    fileName = strrchr(fullPath, DIR_DELIMITER);
     if (fileName != NULL)
         fileName++;
     else
@@ -825,3 +780,123 @@ static void loadDroppedFile(char *fullPath, uint32_t fileNameLen)
         loadSample(fullPath, fileName);
     }
 }
+
+void cleanUp(void) // never call this inside the main loop!
+{
+    audioClose();
+
+    SDL_RemoveTimer(timer50Hz);
+
+    modFree();
+
+    free(editor.rowVisitTable);
+    free(editor.ui.pattNames);
+    free(editor.tempSample);
+    free(editor.scopeBuffer);
+
+    deAllocSamplerVars();
+    deAllocDiskOpVars();
+    freeDiskOpFileMem();
+    freeBMPs();
+    terminalFree();
+
+    free(ptConfig.defaultDiskOpDir);
+    videoClose();
+    freeSprites();
+
+#ifdef _WIN32
+    UnhookWindowsHookEx(g_hKeyboardHook);
+#endif
+}
+
+void syncThreadTo60Hz(void)
+{
+    // this routine almost never delays if we have 60Hz vsync
+
+    uint64_t timeNow_64bit;
+    double delayMs_f, perfFreq_f, frameLength_f;
+
+    perfFreq_f = (double)(SDL_GetPerformanceFrequency()); // should be safe for double
+    if (perfFreq_f == 0.0)
+        return; // panic!
+
+    timeNow_64bit = SDL_GetPerformanceCounter();
+    if (next60HzTime_64bit > timeNow_64bit)
+    {
+        delayMs_f = (double)(next60HzTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f); // should be safe for double
+        SDL_Delay((uint32_t)(delayMs_f + 0.5));
+    }
+
+    frameLength_f = perfFreq_f / VBLANK_HZ;
+    next60HzTime_64bit += (uint64_t)(frameLength_f + 0.5);
+}
+
+void readMouseXY(void)
+{
+    int16_t x, y;
+    int32_t mx, my;
+    double mx_f, my_f;
+
+    SDL_PumpEvents();
+    SDL_GetMouseState(&mx, &my);
+
+    if (input.mouse.scaleX_f != 1.0)
+    {
+        mx_f = mx * input.mouse.scaleX_f;
+        mx = (int32_t)(mx_f + 0.5);
+    }
+
+    if (input.mouse.scaleY_f != 1.0)
+    {
+        my_f = my * input.mouse.scaleY_f;
+        my = (int32_t)(my_f + 0.5);
+    }
+
+    /* clamp to edges */
+    mx = CLAMP(mx, 0, SCREEN_W - 1);
+    my = CLAMP(my, 0, SCREEN_H - 1);
+
+    x = (int16_t)(mx);
+    y = (int16_t)(my);
+
+    input.mouse.x = x;
+    input.mouse.y = y;
+
+    setSpritePos(SPRITE_MOUSE_POINTER, x, y);
+}
+
+#ifdef __APPLE__
+void osxSetDirToProgramDirFromArgs(char **argv)
+{
+    char *tmpPath;
+    int32_t i, tmpPathLen;
+
+    /* OS X/macOS: hackish way of setting the current working directory to the place where we double clicked
+    ** on the icon (for protracker.ini loading)
+    */
+
+    // if we launched from the terminal, argv[0][0] would be '.'
+    if ((argv[0] != NULL) && (argv[0][0] == DIR_DELIMITER)) // don't do the hack if we launched from the terminal
+    {
+        tmpPath = strdup(argv[0]);
+        if (tmpPath != NULL)
+        {
+            // cut off program filename
+            tmpPathLen = strlen(tmpPath);
+            for (i = tmpPathLen - 1; i >= 0; --i)
+            {
+                if (tmpPath[i] == DIR_DELIMITER)
+                {
+                    tmpPath[i] = '\0';
+                    break;
+                }
+            }
+
+            chdir(tmpPath);     // path to binary
+            chdir("../../../"); // we should now be in the directory where the config can be.
+
+            free(tmpPath);
+        }
+    }
+}
+#endif

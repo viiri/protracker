@@ -1738,6 +1738,7 @@ void calcMod2WavTotalRows(void)
 
 int8_t quantizeFloatTo8bit(float smpFloat)
 {
+    smpFloat = ROUND_SMP_F(smpFloat);
     smpFloat = CLAMP(smpFloat, -128.0f, 127.0f);
     return (int8_t)(smpFloat);
 }

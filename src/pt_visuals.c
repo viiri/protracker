@@ -873,7 +873,7 @@ void updatePosEd(void)
                 }
 
                 // hack to fix bottom part of text edit marker in pos ed
-                if (editor.ui.getLineFlag)
+                if (editor.ui.editTextFlag)
                 {
                     if ((editor.ui.editObject == PTB_PE_PATT) || (editor.ui.editObject == PTB_PE_PATTNAME))
                         renderTextEditMarker();
@@ -1019,7 +1019,7 @@ void removeTextEditMarker(void)
 {
     uint32_t *ptr32Dst, *ptr32Dst_2, pixel;
 
-    if (editor.ui.getLineFlag)
+    if (editor.ui.editTextFlag)
     {
         ptr32Dst   = pixelBuffer + ((editor.ui.lineCurY * SCREEN_W) + (editor.ui.lineCurX - 4));
         ptr32Dst_2 = ptr32Dst - SCREEN_W;
@@ -1071,7 +1071,7 @@ void renderTextEditMarker(void)
 {
     uint32_t *ptr32Dst, *ptr32Dst_2, pixel;
 
-    if (editor.ui.getLineFlag)
+    if (editor.ui.editTextFlag)
     {
         ptr32Dst   = pixelBuffer + ((editor.ui.lineCurY * SCREEN_W) + (editor.ui.lineCurX - 4));
         ptr32Dst_2 = ptr32Dst - SCREEN_W;

@@ -22,5 +22,6 @@ void updateKeyModifiers(void);
 void handleKeyRepeat(SDL_Scancode keyEntry);
 void keyUpHandler(SDL_Scancode keyEntry);
 void keyDownHandler(SDL_Scancode keyEntry);
+void handleTextEditInputChar(char textChar);
 
 #endif

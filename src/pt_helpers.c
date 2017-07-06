@@ -102,7 +102,7 @@ int8_t moduleNameIsEmpty(char *name)
 
 void updateWindowTitle(int8_t modified)
 {
-    char titleTemp[64];
+    char titleTemp[128];
 
     if (modified)
         modEntry->modified = true;
@@ -112,37 +112,37 @@ void updateWindowTitle(int8_t modified)
         if (modified)
         {
             if (editor.diskop.modDot)
-                sprintf(titleTemp, "ProTracker v2.3D clone *(mod.%s)", modEntry->head.moduleTitle);
+                sprintf(titleTemp, "ProTracker v2.3D clone *(mod.%s) - compiled %s", modEntry->head.moduleTitle, __DATE__);
             else
-                sprintf(titleTemp, "ProTracker v2.3D clone *(%s.mod)", modEntry->head.moduleTitle);
+                sprintf(titleTemp, "ProTracker v2.3D clone *(%s.mod) - compiled %s", modEntry->head.moduleTitle, __DATE__);
         }
         else
         {
             if (editor.diskop.modDot)
-                sprintf(titleTemp, "ProTracker v2.3D clone (mod.%s)", modEntry->head.moduleTitle);
+                sprintf(titleTemp, "ProTracker v2.3D clone (mod.%s) - compiled %s", modEntry->head.moduleTitle, __DATE__);
             else
-                sprintf(titleTemp, "ProTracker v2.3D clone (%s.mod)", modEntry->head.moduleTitle);
+                sprintf(titleTemp, "ProTracker v2.3D clone (%s.mod) - compiled %s", modEntry->head.moduleTitle, __DATE__);
         }
-
-        SDL_SetWindowTitle(window, titleTemp);
     }
     else
     {
         if (modified)
         {
             if (editor.diskop.modDot)
-                SDL_SetWindowTitle(window, "ProTracker v2.3D clone *(mod.untitled)");
+                sprintf(titleTemp, "ProTracker v2.3D clone *(mod.untitled) - compiled %s", __DATE__);
             else
-                SDL_SetWindowTitle(window, "ProTracker v2.3D clone *(untitled.mod)");
+                sprintf(titleTemp, "ProTracker v2.3D clone *(untitled.mod) - compiled %s", __DATE__);
         }
         else
         {
             if (editor.diskop.modDot)
-                SDL_SetWindowTitle(window, "ProTracker v2.3D clone (mod.untitled)");
+                sprintf(titleTemp, "ProTracker v2.3D clone (mod.untitled) - compiled %s", __DATE__);
             else
-                SDL_SetWindowTitle(window, "ProTracker v2.3D clone (untitled.mod)");
+                sprintf(titleTemp, "ProTracker v2.3D clone (untitled.mod) - compiled %s", __DATE__);
         }
     }
+
+     SDL_SetWindowTitle(window, titleTemp);
 }
 
 void recalcChordLength(void)
