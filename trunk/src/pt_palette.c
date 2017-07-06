@@ -14,15 +14,16 @@ uint32_t palette[PALETTE_NUM] =
     0x00DD0044, // 05- PAL_PATCURSOR
     0x00000000, // 06- PAL_GENTXT
     0x003344FF, // 07- PAL_PATTXT
+    0x00554900, // 08- PAL_SMPMRK
     // -----------------------------
-    0x0000FFFF, // 08- PAL_SAMPLLINE
-    0x000000FF, // 09- PAL_LOOPPIN
-    0x00770077, // 10- PAL_TEXTMARK
-    0x00444444, // 11- PAL_MOUSE_1
-    0x00777777, // 12- PAL_MOUSE_2
-    0x00AAAAAA, // 13- PAL_MOUSE_3
+    0x0000FFFF, // 09- PAL_SAMPLLINE
+    0x000000FF, // 10- PAL_LOOPPIN
+    0x00770077, // 11- PAL_TEXTMARK
+    0x00444444, // 12- PAL_MOUSE_1
+    0x00777777, // 13- PAL_MOUSE_2
+    0x00AAAAAA, // 14- PAL_MOUSE_3
     // -----------------------------
-    0x00C0FFEE  // 14- PAL_COLORKEY
+    0x00C0FFEE  // 15- PAL_COLORKEY
     // -----------------------------
 };
 
@@ -149,7 +150,7 @@ void pointerSetMode(int8_t pointerMode, uint8_t carry)
 
 void pointerSetPreviousMode(void)
 {
-    if (editor.ui.getLineFlag || editor.ui.askScreenShown || editor.ui.clearScreenShown)
+    if (editor.ui.editTextFlag || editor.ui.askScreenShown || editor.ui.clearScreenShown)
         pointerSetMode(POINTER_MODE_MSG1, NO_CARRY);
     else
         pointerSetMode(editor.ui.previousPointerMode, NO_CARRY);

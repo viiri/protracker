@@ -40,23 +40,37 @@ void extLoadWAVSampleCallback(int8_t downsample)
 
 int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSampling)
 {
-    // Stereo is combined to mono
-    // '32-bit float' and 16-bit is quantized to 8-bit
-    // pre-"2x downsampling" (if wanted by the user)
+    /*
+    ** - Supports 8-bit, 16-bit, 24-bit, 32-bit, 32-bit float
+    ** - Supports additional "INAM", "smpl" and "xtra" chunks
+    ** - Stereo is downmixed to mono
+    ** - >8-bit is quantized to 8-bit
+    ** - pre-"2x downsampling" (if wanted by the user)
+    */
 
-    int8_t skippingChunks;
     uint8_t *audioDataU8, wavSampleNameFound;
     int16_t *audioDataS16, tempVol;
     uint16_t audioFormat, numChannels, bitsPerSample;
     int32_t *audioDataS32;
     uint32_t *audioDataU32, i, nameLen, chunkID, chunkSize;
-    uint32_t sampleLength, sampleRate, fileLength, loopFlags;
-    uint32_t loopStart, loopEnd, endOfChunkPos;
+    uint32_t sampleLength, sampleRate, filesize, loopFlags;
+    uint32_t loopStart, loopEnd, dataPtr, dataLen, fmtPtr, endOfChunk, bytesRead;
+    uint32_t fmtLen, inamPtr, inamLen, smplPtr, smplLen, xtraPtr, xtraLen;
     float *audioDataFloat, smp_f;
     double smp_d;
     FILE *f;
+    moduleSample_t *s;
+
+    // zero out chunk pointers and lengths
+    fmtPtr  = 0; fmtLen  = 0;
+    dataPtr = 0; dataLen = 0;
+    inamPtr = 0; inamLen = 0;
+    xtraPtr = 0; xtraLen = 0;
+    smplPtr = 0; smplLen = 0;
 
     wavSampleNameFound = false;
+
+    s = &modEntry->samples[editor.currSample];
 
     if (forceDownSampling == -1)
     {
@@ -78,11 +92,8 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
     }
 
     fseek(f, 0, SEEK_END);
-    fileLength = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    fread(&chunkID, 4, 1, f); if (bigEndian) chunkID = SWAP32(chunkID);
-    if (chunkID != 0x46464952)
+    filesize = ftell(f);
+    if (filesize == 0)
     {
         displayErrorMsg("NOT A WAV !");
         terminalPrintf("WAV sample loading failed: not a valid .WAV\n");
@@ -92,75 +103,113 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
         return (false);
     }
 
-    fseek(f, 8, SEEK_CUR); // unneeded stuff
+    // look for wanted chunks and set up pointers + lengths
+    fseek(f, 12, SEEK_SET);
 
-    fread(&chunkID,     4, 1, f); if (bigEndian) chunkID     = SWAP32(chunkID);
-    fread(&chunkSize,   4, 1, f); if (bigEndian) chunkSize   = SWAP32(chunkSize);
-    fread(&audioFormat, 2, 1, f); if (bigEndian) audioFormat = SWAP16(audioFormat);
-    fread(&numChannels, 2, 1, f); if (bigEndian) numChannels = SWAP16(numChannels);
-    fread(&sampleRate,  4, 1, f); if (bigEndian) sampleRate  = SWAP16(sampleRate);
-
-    fseek(f, 6, SEEK_CUR); // unneeded stuff
-
-    fread(&bitsPerSample, 2, 1, f); if (bigEndian) bitsPerSample = SWAP16(bitsPerSample);
-
-    if (chunkID != 0x20746D66)
+    bytesRead = 0;
+    while (!feof(f) && (bytesRead < (filesize - 12)))
     {
-        displayErrorMsg("NOT A WAV !");
-        terminalPrintf("WAV sample loading failed: not a valid .WAV\n");
+        fread(&chunkID,   4, 1, f); if (feof(f)) break;
+        fread(&chunkSize, 4, 1, f); if (feof(f)) break;
 
-        fclose(f);
+        if (bigEndian) chunkID   = SWAP32(chunkID);
+        if (bigEndian) chunkSize = SWAP32(chunkSize);
 
-        return (false);
-    }
-
-    if ((chunkSize > 16) && ((ftell(f) + chunkSize) < fileLength))
-        fseek(f, chunkSize - 16, SEEK_CUR);
-
-    skippingChunks = true;
-    while (skippingChunks && !feof(f))
-    {
-        fread(&chunkID,   4, 1, f); if (bigEndian) chunkID   = SWAP32(chunkID);
-        fread(&chunkSize, 4, 1, f); if (bigEndian) chunkSize = SWAP32(chunkSize);
-
+        endOfChunk = (ftell(f) + chunkSize) + (chunkSize & 1);
         switch (chunkID)
         {
-            case 0x61746164: // "data"
-                skippingChunks = false;
-            break;
-
-            default:
+            case 0x20746D66: // "fmt "
             {
-                // uninteresting chunk, skip its content
-
-                // if odd chunk size, take pad byte into consideration
-                if (chunkSize & 1)
-                    chunkSize++;
-
-                if ((ftell(f) + chunkSize) >= fileLength)
-                {
-                    fclose(f);
-
-                    displayErrorMsg("WAV IS CORRUPT !");
-                    terminalPrintf("WAV sample loading failed: not a valid .WAV\n");
-
-                    return (false);
-                }
-
-                if (chunkSize > 0)
-                    fseek(f, chunkSize, SEEK_CUR);
+                fmtPtr = ftell(f);
+                fmtLen = chunkSize;
             }
             break;
+
+            case 0x61746164: // "data"
+            {
+                dataPtr = ftell(f);
+                dataLen = chunkSize;
+            }
+            break;
+
+            case 0x5453494C: // "LIST"
+            {
+                if (chunkSize >= 4)
+                {
+                    fread(&chunkID, 4, 1, f); if (bigEndian) chunkID = SWAP32(chunkID);
+                    if (chunkID == 0x4F464E49) // "INFO"
+                    {
+                        bytesRead = 0;
+                        while (!feof(f) && (bytesRead < chunkSize))
+                        {
+                            fread(&chunkID,   4, 1, f); if (bigEndian) chunkID   = SWAP32(chunkID);
+                            fread(&chunkSize, 4, 1, f); if (bigEndian) chunkSize = SWAP32(chunkSize);
+
+                            switch (chunkID)
+                            {
+                                case 0x4D414E49: // "INAM"
+                                {
+                                    inamPtr = ftell(f);
+                                    inamLen = chunkSize;
+                                }
+                                break;
+
+                                default: break;
+                            }
+
+                            bytesRead += (chunkSize + (chunkSize & 1));
+                        }
+                    }
+                }
+            }
+            break;
+
+            case 0x61727478: // "xtra"
+            {
+                xtraPtr = ftell(f);
+                xtraLen = chunkSize;
+            }
+            break;
+
+            case 0x6C706D73: // "smpl"
+            {
+                smplPtr = ftell(f);
+                smplLen = chunkSize;
+            }
+            break;
+
+            default: break;
         }
+
+        bytesRead += (chunkSize + (chunkSize & 1));
+        fseek(f, endOfChunk, SEEK_SET);
     }
 
-    sampleLength = chunkSize;
-
-    if ((chunkID != 0x61746164) || (sampleLength >= fileLength))
+    // we need at least "fmt " and "data" - check if we found them sanely
+    if (((fmtPtr == 0) || (fmtLen < 16)) || ((dataPtr == 0) || (dataLen == 0)))
     {
         displayErrorMsg("NOT A WAV !");
         terminalPrintf("WAV sample loading failed: not a valid .WAV\n");
 
+        fclose(f);
+
+        return (false);
+    }
+
+    // ---- READ "fmt " CHUNK ----
+    fseek(f, fmtPtr, SEEK_SET);
+    fread(&audioFormat, 2, 1, f); if (bigEndian) audioFormat = SWAP16(audioFormat);
+    fread(&numChannels, 2, 1, f); if (bigEndian) numChannels = SWAP16(numChannels);
+    fread(&sampleRate,  4, 1, f); if (bigEndian) sampleRate  = SWAP32(sampleRate);
+    fseek(f, 6, SEEK_CUR); // unneeded
+    fread(&bitsPerSample, 2, 1, f); if (bigEndian) bitsPerSample = SWAP16(bitsPerSample);
+    sampleLength = dataLen;
+    // ---------------------------
+
+    if ((sampleRate == 0) || (sampleLength == 0) || (sampleLength >= filesize))
+    {
+        displayErrorMsg("WAV CORRUPT !");
+        terminalPrintf("WAV sample loading failed: corrupt WAV file\n");
         fclose(f);
 
         return (false);
@@ -226,9 +275,8 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
         forceDownSampling = false;
     }
 
-    endOfChunkPos = ftell(f) + sampleLength;
-    if (sampleLength & 1)
-        endOfChunkPos++; // align byte
+    // ---- READ SAMPLE DATA ----
+    fseek(f, dataPtr, SEEK_SET);
 
     if (bitsPerSample == 8) // 8-BIT INTEGER SAMPLE
     {
@@ -388,12 +436,9 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
         audioDataU8 = (uint8_t *)(audioDataS32);
         for (i = 0; i < sampleLength; i++)
         {
-            fread(&audioDataU8[1], 1, 1, f);
-            fread(&audioDataU8[2], 1, 1, f);
-            fread(&audioDataU8[3], 1, 1, f);
             audioDataU8[0] = 0;
-
-            audioDataU8 += 4;
+            fread(&audioDataU8[1], 3, 1, f);
+            audioDataU8 += sizeof (int32_t);
         }
 
         // convert endianness (if needed)
@@ -412,9 +457,8 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
             for (i = 0; i < (sampleLength - 1); i++)
             {
                 smp_d = (audioDataS32[(i * 2) + 0] / 2.0) + (audioDataS32[(i * 2) + 1] / 2.0);
+                smp_d = CLAMP(smp_d, -2147483648.0, 2147483647.0);
                 smp_d = ROUND_SMP_D(smp_d);
-                smp_d = CLAMP(smp_d, -8388608.0, 8388607.0);
-
                 audioDataS32[i] = (int32_t)(smp_d);
             }
         }
@@ -443,7 +487,7 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
 
         free(audioDataS32);
     }
-    else if ((audioFormat == 1) && (bitsPerSample == 32)) // 32-BIT INTEGER SAMPLE
+    else if ((audioFormat == WAVE_FORMAT_PCM) && (bitsPerSample == 32)) // 32-BIT INTEGER SAMPLE
     {
         sampleLength /= 4;
         if (sampleLength > (MAX_SAMPLE_LEN * 4))
@@ -511,7 +555,7 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
 
         free(audioDataS32);
     }
-    else if ((audioFormat == 3) && (bitsPerSample == 32)) // 32-BIT FLOAT SAMPLE
+    else if ((audioFormat == WAVE_FORMAT_IEEE_FLOAT) && (bitsPerSample == 32)) // 32-BIT FLOAT SAMPLE
     {
         sampleLength /= 4;
         if (sampleLength > (MAX_SAMPLE_LEN * 4))
@@ -587,8 +631,6 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
         free(audioDataU32);
     }
 
-    fseek(f, endOfChunkPos, SEEK_SET);
-
     // set sample length
     if (sampleLength & 1)
     {
@@ -596,113 +638,75 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
               sampleLength = MAX_SAMPLE_LEN;
     }
 
-    modEntry->samples[editor.currSample].length = sampleLength;
+    s->length     = sampleLength;
+    s->fineTune   = 0;
+    s->volume     = 64;
+    s->loopStart  = 0;
+    s->loopLength = 2;
 
-    modEntry->samples[editor.currSample].fineTune   = 0;
-    modEntry->samples[editor.currSample].volume     = 64;
-    modEntry->samples[editor.currSample].loopStart  = 0;
-    modEntry->samples[editor.currSample].loopLength = 2;
-
-    // look for extra chunks
-    while (!feof(f) && ((uint32_t)(ftell(f)) <= (fileLength - 8)))
+    // ---- READ "smpl" chunk ----
+    if ((smplPtr != 0) && (smplLen > 52))
     {
-        fread(&chunkID,   sizeof (int32_t), 1, f); if (bigEndian) chunkID   = SWAP32(chunkID);
-        fread(&chunkSize, sizeof (int32_t), 1, f); if (bigEndian) chunkSize = SWAP32(chunkSize);
+        fseek(f, smplPtr + 28, SEEK_SET); // seek to first wanted byte
 
-        // if odd chunk size, take pad byte into consideration
-        if (chunkSize & 1)
-            chunkSize++;
+        fread(&loopFlags, 4, 1, f); if (bigEndian) loopFlags = SWAP32(loopFlags);
+        fseek(f, 12, SEEK_CUR);
+        fread(&loopStart, 4, 1, f); if (bigEndian) loopStart = SWAP32(loopStart);
+        fread(&loopEnd,   4, 1, f); if (bigEndian) loopEnd   = SWAP32(loopEnd);
+        loopEnd++;
 
-        endOfChunkPos = ftell(f) + chunkSize;
-        if (endOfChunkPos > fileLength)
-            break;
-
-        switch (chunkID)
+        if (forceDownSampling)
         {
-            case 0x6C706D73: // "smpl"
-            {
-                if (chunkSize >= 52)
-                {
-                    fseek(f, 28, SEEK_CUR);
-                    fread(&loopFlags, 4, 1, f); if (bigEndian) loopFlags = SWAP32(loopFlags);
-                    fseek(f, 12, SEEK_CUR);
-                    fread(&loopStart, 4, 1, f); if (bigEndian) loopStart = SWAP32(loopStart);
-                    fread(&loopEnd,   4, 1, f); if (bigEndian) loopEnd   = SWAP32(loopEnd);
-
-                    if (loopFlags)
-                    {
-                        if (forceDownSampling)
-                        {
-                            // we already downsampled 2x, so we're half the original length
-                            loopStart /= 2;
-                            loopEnd   /= 2;
-                        }
-
-                        loopStart &= 0xFFFFFFFE;
-                        loopEnd = (loopEnd + 1) & 0xFFFFFFFE;
-
-                        if (loopEnd <= sampleLength)
-                        {
-                            modEntry->samples[editor.currSample].loopStart  = loopStart;
-                            modEntry->samples[editor.currSample].loopLength = loopEnd - loopStart;
-                        }
-                    }
-                }
-            }
-            break;
-
-            case 0x61727478: // "xtra"
-            {
-                if (chunkSize >= 8)
-                {
-                    fseek(f, 6, SEEK_CUR);
-                    fread(&tempVol, 2, 1, f);
-
-                    tempVol = CLAMP(tempVol, 0, 256);
-                    modEntry->samples[editor.currSample].volume = (int8_t)(((tempVol * (64.0f / 256.0f)) + 0.5f));
-                }
-            }
-            break;
-
-            case 0x5453494C: // "LIST"
-            {
-                if (chunkSize >= 13)
-                {
-                    fread(&chunkID, sizeof (int32_t), 1, f);
-                    if (chunkID == 0x4f464e49) // "INFO"
-                    {
-                        /* This is hackish, it assumes that INAM follows INFO, which
-                        ** may not always be the case. This is better than nothing, anyways.
-                        */
-
-                        fread(&chunkID,   sizeof (int32_t), 1, f);
-                        fread(&chunkSize, sizeof (int32_t), 1, f);
-
-                        if ((chunkID == 0x4D414E49) && (chunkSize > 0)) // "INAM"
-                        {
-                            for (i = 0; i < 21; ++i)
-                            {
-                                if (i < chunkSize)
-                                    modEntry->samples[editor.currSample].text[i] = (char)(tolower(fgetc(f)));
-                                else
-                                    modEntry->samples[editor.currSample].text[i] = '\0';
-                            }
-
-                            modEntry->samples[editor.currSample].text[21] = '\0';
-                            modEntry->samples[editor.currSample].text[22] = '\0';
-
-                            wavSampleNameFound = true;
-                        }
-                    }
-                }
-            }
-            break;
-
-            default: break;
+            // we already downsampled 2x, so we're half the original length
+            loopStart /= 2;
+            loopEnd   /= 2;
         }
 
-        fseek(f, endOfChunkPos, SEEK_SET);
+        loopStart &= 0xFFFFFFFE;
+        loopEnd   &= 0xFFFFFFFE;
+
+        if (loopFlags)
+        {
+            if (loopEnd <= sampleLength)
+            {
+                s->loopStart  = loopStart;
+                s->loopLength = loopEnd - loopStart;
+            }
+        }
     }
+    // ---------------------------
+
+    // ---- READ "xtra" chunk ----
+    if ((xtraPtr != 0) && (xtraLen >= 8))
+    {
+        fseek(f, xtraPtr + 4, SEEK_SET); // seek to first wanted byte
+
+        // volume (0..256)
+        fseek(f, 2, SEEK_CUR);
+        fread(&tempVol, 2, 1, f); if (bigEndian) tempVol = SWAP16(tempVol);
+        s->volume = (int8_t)((CLAMP(tempVol, 0, 256) * (64.0f / 256.0f)) + 0.5f);
+    }
+    // ---------------------------
+
+    // ---- READ "INAM" chunk ----
+    if ((inamPtr != 0) && (inamLen > 0))
+    {
+        fseek(f, inamPtr, SEEK_SET); // seek to first wanted byte
+
+        for (i = 0; i < 21; ++i)
+        {
+            if (i < inamLen)
+                s->text[i] = (char)(tolower(fgetc(f)));
+            else
+                s->text[i] = '\0';
+        }
+
+        s->text[21] = '\0';
+        s->text[22] = '\0';
+
+        wavSampleNameFound = true;
+    }
+    // ---------------------------
 
     fclose(f);
 
@@ -711,16 +715,16 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
     {
         nameLen = strlen(entryName);
         for (i = 0; i < 21; ++i)
-            modEntry->samples[editor.currSample].text[i] = (i < nameLen) ? (char)(tolower(entryName[i])) : '\0';
+           s->text[i] = (i < nameLen) ? (char)(tolower(entryName[i])) : '\0';
 
-        modEntry->samples[editor.currSample].text[21] = '\0';
-        modEntry->samples[editor.currSample].text[22] = '\0';
+        s->text[21] = '\0';
+        s->text[22] = '\0';
     }
 
     // remove .wav from end of sample name (if present)
-    nameLen = strlen(modEntry->samples[editor.currSample].text);
-    if ((nameLen >= 4) && !strncmp(&modEntry->samples[editor.currSample].text[nameLen - 4], ".wav", 4))
-          memset(&modEntry->samples[editor.currSample].text[nameLen - 4], '\0',   4);
+    nameLen = strlen(s->text);
+    if ((nameLen >= 4) && !strncmp(&s->text[nameLen - 4], ".wav", 4))
+          memset(&s->text[nameLen - 4], '\0',   4);
 
     editor.sampleZero = false;
     editor.samplePos  = 0;
@@ -729,7 +733,7 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
     updateCurrSample();
     fillSampleRedoBuffer(editor.currSample);
 
-    terminalPrintf("WAV sample \"%s\" loaded into sample slot %02x\n", modEntry->samples[editor.currSample].text, editor.currSample + 1);
+    terminalPrintf("WAV sample \"%s\" loaded to slot %02x\n", s->text, editor.currSample + 1);
 
     updateWindowTitle(MOD_IS_MODIFIED);
     return (true);
@@ -741,10 +745,18 @@ int8_t loadIFFSample(const char *fileName, char *entryName)
     int8_t *sampleData;
     uint8_t nameFound, skippingBlocks, is16Bit;
     int16_t sample16, *ptr16;
-    uint32_t i, nameLen, sampleLength, sampleLoopStart;
-    uint32_t sampleLoopLength, sampleVolume;
-    uint32_t blockName, blockSize, fileLength;
+    int32_t filesize;
+    uint32_t i, sampleLength, sampleLoopStart, sampleLoopLength;
+    uint32_t sampleVolume, blockName, blockSize;
+    uint32_t vhdrPtr, vhdrLen, bodyPtr, bodyLen, namePtr, nameLen;
     FILE *f;
+    moduleSample_t *s;
+
+    s = &modEntry->samples[editor.currSample];
+
+    vhdrPtr = 0; vhdrLen = 0;
+    bodyPtr = 0; bodyLen = 0;
+    namePtr = 0; nameLen = 0;
 
     f = fopen(fileName, "rb");
     if (f == NULL)
@@ -756,10 +768,8 @@ int8_t loadIFFSample(const char *fileName, char *entryName)
     }
 
     fseek(f, 0, SEEK_END);
-    fileLength = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    if (fileLength == 0)
+    filesize = ftell(f);
+    if (filesize == 0)
     {
         displayErrorMsg("IFF IS CORRUPT !");
         terminalPrintf("IFF sample loading failed: not a valid .IFF\n");
@@ -777,101 +787,87 @@ int8_t loadIFFSample(const char *fileName, char *entryName)
     sampleVolume   = 65536; // max volume
 
     fseek(f, 12, SEEK_SET);
-    while (skippingBlocks && !feof(f))
+    while (!feof(f) && (ftell(f) < (filesize - 12)))
     {
-        // blockName is little-endian, blockSize is big-endian
-        fread(&blockName, 4, 1, f); if ( bigEndian) blockName = SWAP32(blockName);
-        fread(&blockSize, 4, 1, f); if (!bigEndian) blockSize = SWAP32(blockSize);
+        fread(&blockName, 4, 1, f); if (feof(f)) break;
+        fread(&blockSize, 4, 1, f); if (feof(f)) break;
 
-        if (blockSize & 1)
-            blockSize++;
+        if (!bigEndian) blockName = SWAP32(blockName);
+        if (!bigEndian) blockSize = SWAP32(blockSize);
 
         switch (blockName)
         {
-            case 0x52444856: // VHDR
+            case 0x56484452: // VHDR
             {
-                if (blockSize < 20)
-                {
-                    fclose(f);
-
-                    displayErrorMsg("IFF IS CORRUPT !");
-                    terminalPrintf("IFF sample loading failed: not a valid .IFF\n");
-
-                    return (false);
-                }
-
-                fread(&sampleLoopStart,  4, 1, f); if (!bigEndian) sampleLoopStart  = SWAP32(sampleLoopStart);
-                fread(&sampleLoopLength, 4, 1, f); if (!bigEndian) sampleLoopLength = SWAP32(sampleLoopLength);
-
-                fseek(f, 4 + 2 + 1, SEEK_CUR);
-
-                if (fgetc(f) != 0) // sample type
-                {
-                    fclose(f);
-
-                    displayErrorMsg("UNSUPPORTED IFF !");
-                    terminalPrintf("IFF sample loading failed: unsupported .IFF\n");
-
-                    return (false);
-                }
-
-                fread(&sampleVolume, 4, 1, f); if (!bigEndian) sampleVolume = SWAP32(sampleVolume);
-                if (sampleVolume > 65536)
-                    sampleVolume = 65536;
-                sampleVolume = (uint32_t)((sampleVolume / 1024.0f) + 0.5f);
-
-                if (blockSize > 20)
-                    fseek(f, blockSize - 20, SEEK_CUR);
+                vhdrPtr = ftell(f);
+                vhdrLen = blockSize;
             }
             break;
 
-            case 0x454D414E: // NAME
+            case 0x4E414D45: // NAME
             {
-                memset(tmpCharBuf, 0, 22);
-
-                if (blockSize > 21)
-                {
-                    fread(tmpCharBuf, 1, 21, f);
-                    fseek(f, blockSize - 21, SEEK_CUR);
-                }
-                else
-                {
-                    fread(tmpCharBuf, 1, blockSize, f);
-                }
-
-                nameFound = true;
+                namePtr = ftell(f);
+                nameLen = blockSize;
             }
             break;
 
-            case 0x59444F42: // BODY
+            case 0x424F4459: // BODY
             {
-                skippingBlocks = false;
-                sampleLength   = blockSize;
+                bodyPtr = ftell(f);
+                bodyLen = blockSize;
             }
             break;
 
-            default:
-            {
-                // uninteresting block, skip its content
-
-                if ((ftell(f) + blockSize) >= fileLength)
-                {
-                    fclose(f);
-
-                    displayErrorMsg("IFF IS CORRUPT !");
-                    terminalPrintf("IFF sample loading failed: not a valid .IFF\n");
-
-                    return (false);
-                }
-
-                if (blockSize > 0)
-                    fseek(f, blockSize, SEEK_CUR);
-            }
-            break;
+            default: break;
         }
+
+        fseek(f, blockSize + (blockSize & 1), SEEK_CUR);
     }
 
-    if ((sampleLength == 0) || skippingBlocks || feof(f))
+    if ((vhdrPtr == 0) || (vhdrLen < 20) || (bodyPtr == 0) || (bodyLen == 0))
+    {
+        fclose(f);
+
+        displayErrorMsg("NOT A VALID IFF !");
+        terminalPrintf("IFF sample loading failed: not a valid .IFF\n");
+
+        return (false);
+    }
+
+    fseek(f, vhdrPtr, SEEK_SET);
+    fread(&sampleLoopStart,  4, 1, f); if (!bigEndian) sampleLoopStart  = SWAP32(sampleLoopStart);
+    fread(&sampleLoopLength, 4, 1, f); if (!bigEndian) sampleLoopLength = SWAP32(sampleLoopLength);
+
+    fseek(f, 4 + 2 + 1, SEEK_CUR);
+
+    if (fgetc(f) != 0) // sample type
+    {
+        fclose(f);
+
+        displayErrorMsg("UNSUPPORTED IFF !");
+        terminalPrintf("IFF sample loading failed: unsupported .IFF\n");
+
+        return (false);
+    }
+
+    fread(&sampleVolume, 4, 1, f); if (!bigEndian) sampleVolume = SWAP32(sampleVolume);
+    if (sampleVolume > 65536)
+        sampleVolume = 65536;
+    sampleVolume = (uint32_t)((sampleVolume / 1024.0f) + 0.5f);
+
+    sampleLength = bodyLen;
+    if (is16Bit)
+    {
+        if (sampleLength > (2 * MAX_SAMPLE_LEN))
+            sampleLength =  2 * MAX_SAMPLE_LEN;
+    }
+    else
+    {
+         if (sampleLength > MAX_SAMPLE_LEN)
+            sampleLength  = MAX_SAMPLE_LEN;
+    }
+
+    if (sampleLength == 0)
     {
         fclose(f);
 
@@ -892,16 +888,16 @@ int8_t loadIFFSample(const char *fileName, char *entryName)
         return (false);
     }
 
-    sampleLength     &= 0xFFFFFFFE;
-    sampleLoopStart  &= 0xFFFFFFFE;
-    sampleLoopLength &= 0xFFFFFFFE;
-
     if (is16Bit)
     {
         sampleLength     /= 2;
         sampleLoopStart  /= 2;
         sampleLoopLength /= 2;
     }
+
+    sampleLength     &= 0xFFFFFFFE;
+    sampleLoopStart  &= 0xFFFFFFFE;
+    sampleLoopLength &= 0xFFFFFFFE;
 
     if (sampleLength > MAX_SAMPLE_LEN)
         sampleLength = MAX_SAMPLE_LEN;
@@ -931,56 +927,76 @@ int8_t loadIFFSample(const char *fileName, char *entryName)
     }
 
     mixerKillVoiceIfReadingSample(editor.currSample);
-    memset(modEntry->sampleData + modEntry->samples[editor.currSample].offset, 0, MAX_SAMPLE_LEN);
+    memset(modEntry->sampleData + s->offset, 0, MAX_SAMPLE_LEN);
 
+    fseek(f, bodyPtr, SEEK_SET);
     if (is16Bit) // FT2 specific 16SV format (little-endian samples)
     {
-        fread(sampleData, 1, sampleLength * 2, f);
+        fread(sampleData, 1, 2 * sampleLength, f);
 
         ptr16 = (int16_t *)(sampleData);
         for (i = 0; i < sampleLength; ++i)
         {
             sample16 = ptr16[i]; if (bigEndian) sample16 = SWAP16(sample16);
-            modEntry->sampleData[modEntry->samples[editor.currSample].offset + i] = quantize16bitTo8bit(sample16);
+            modEntry->sampleData[s->offset + i] = quantize16bitTo8bit(sample16);
         }
     }
     else
     {
         fread(sampleData, 1, sampleLength, f);
-        memcpy(modEntry->sampleData + modEntry->samples[editor.currSample].offset, sampleData, sampleLength);
+        memcpy(modEntry->sampleData + s->offset, sampleData, sampleLength);
     }
 
-    fclose(f);
     free(sampleData);
 
     // set sample attributes
-    modEntry->samples[editor.currSample].volume     = sampleVolume;
-    modEntry->samples[editor.currSample].fineTune   = 0;
-    modEntry->samples[editor.currSample].length     = sampleLength;
-    modEntry->samples[editor.currSample].loopStart  = sampleLoopStart;
-    modEntry->samples[editor.currSample].loopLength = sampleLoopLength;
+    s->volume     = sampleVolume;
+    s->fineTune   = 0;
+    s->length     = sampleLength;
+    s->loopStart  = sampleLoopStart;
+    s->loopLength = sampleLoopLength;
+
+    // read name
+    if ((namePtr != 0) && (nameLen > 0))
+    {
+        fseek(f, namePtr, SEEK_SET);
+        memset(tmpCharBuf, 0, 22);
+
+        if (nameLen > 21)
+        {
+            fread(tmpCharBuf, 1, 21, f);
+            fseek(f, nameLen - 21, SEEK_CUR);
+        }
+        else
+        {
+            fread(tmpCharBuf, 1, nameLen, f);
+        }
+
+        nameFound = true;
+    }
+
+    fclose(f);
 
     // copy over sample name
-
-    memset(modEntry->samples[editor.currSample].text, '\0', 23);
+    memset(s->text, '\0', 23);
 
     if (nameFound)
     {
         nameLen = strlen(tmpCharBuf);
         for (i = 0; i < nameLen; ++i)
-            modEntry->samples[editor.currSample].text[i] = (char)(tolower(tmpCharBuf[i]));
+            s->text[i] = (char)(tolower(tmpCharBuf[i]));
     }
     else
     {
         nameLen = strlen(entryName);
         for (i = 0; i < nameLen; ++i)
-            modEntry->samples[editor.currSample].text[i] = (char)(tolower(entryName[i]));
+            s->text[i] = (char)(tolower(entryName[i]));
     }
 
     // remove .iff from end of sample name (if present)
-    nameLen = strlen(modEntry->samples[editor.currSample].text);
-    if ((nameLen >= 4) && !strncmp(&modEntry->samples[editor.currSample].text[nameLen - 4], ".iff", 4))
-          memset(&modEntry->samples[editor.currSample].text[nameLen - 4], '\0', 4);
+    nameLen = strlen(s->text);
+    if ((nameLen >= 4) && !strncmp(&s->text[nameLen - 4], ".iff", 4))
+          memset(&s->text[nameLen - 4], '\0', 4);
 
     editor.sampleZero = false;
     editor.samplePos  = 0;
@@ -989,7 +1005,7 @@ int8_t loadIFFSample(const char *fileName, char *entryName)
     updateCurrSample();
     fillSampleRedoBuffer(editor.currSample);
 
-    terminalPrintf("IFF sample \"%s\" loaded into sample slot %02x\n", modEntry->samples[editor.currSample].text, editor.currSample + 1);
+    terminalPrintf("IFF sample \"%s\" loaded into sample slot %02x\n", s->text, editor.currSample + 1);
 
     updateWindowTitle(MOD_IS_MODIFIED);
     return (false);

@@ -6,8 +6,10 @@
 
 #ifdef _WIN32
 #define PATH_MAX_LEN 260
+#define DIR_DELIMITER '\\'
 #else
 #define PATH_MAX_LEN 4096
+#define DIR_DELIMITER '/'
 #endif
 
 #include "pt_config.h" // this must be included after PATH_MAX_LEN definition
@@ -275,8 +277,8 @@ struct input_t
     struct keyb_t
     {
         int8_t repeatKey, delayKey;
-        uint8_t shiftKeyDown, controlKeyDown, altKeyDown;
-        uint8_t leftAmigaKeyDown, keypadEnterKeyDown;
+        uint8_t leftShiftKeyDown, leftCtrlKeyDown, leftAltKeyDown;
+        uint8_t leftAmigaKeyDown, keypadEnterKeyDown, rightShiftKeyDown;
         uint8_t repeatCounter, delayCounter;
         SDL_Scancode lastRepKey, lastKey;
     } keyb;
@@ -381,7 +383,7 @@ struct editor_t
         char *dstPtr, *editPos, *textEndPtr, *showTextPtr;
 
         int8_t *numPtr8, tmpDisp8, answerNo, answerYes, throwExit, pointerMode;
-        int8_t getLineFlag, getLineType ,askScreenType, askScreenShown, visualizerMode;
+        int8_t editTextFlag, editTextType, askScreenType, askScreenShown, visualizerMode;
         int8_t leftLoopPinMoving, rightLoopPinMoving, samplerScreenShown, previousPointerMode;
         int8_t videoScaleFactor, changingSmpResample, changingDrumPadNote, changingChordNote;
         int8_t forceSampleDrag, forceTermBarDrag, forceVolDrag, forceSampleEdit, introScreenShown;

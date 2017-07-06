@@ -17,6 +17,9 @@
 // rounded constant to fit in float
 #define M_PI_F 3.1415927f
 
+#define SAMPLE_AREA_Y_CENTER 138
+#define SAMPLE_AREA_HEIGHT 33
+
 extern uint32_t *pixelBuffer; // pt_main.c
 
 typedef struct sampleMixer_t
@@ -62,7 +65,7 @@ void fillSampleFilterUndoBuffer(void)
     }
 }
 
-static void drawLine(uint32_t *frameBuffer, int16_t line_x1, int16_t line_y1, int16_t line_x2, int16_t line_y2)
+static void line(uint32_t *frameBuffer, int16_t line_x1, int16_t line_x2, int16_t line_y1, int16_t line_y2)
 {
     int16_t d, x, y, ax, ay, sx, sy, dx, dy;
 
@@ -256,11 +259,15 @@ int32_t scr2SmpPos(int32_t x) // screen x pos -> sample pos
 
 static void renderSampleData(void)
 {
-    uint16_t y1, y2;
-    uint16_t y, x;
+    int8_t *smpPtr, *ptr8;
+    int16_t smp, lo, hi, prevLo, prevHi;
+    uint16_t y1, y2, y, x;
+    int32_t i, numSmpsPerPixel, smpIdx, smpLen;
     const uint32_t *ptr32Src;
     uint32_t *ptr32Dst;
-    uint32_t pixel;
+    moduleSample_t *s;
+
+    s = &modEntry->samples[editor.currSample];
 
     // clear sample data
     ptr32Src = samplerScreenBMP + (17 * 320);
@@ -274,29 +281,69 @@ static void renderSampleData(void)
         ptr32Dst += SCREEN_W;
     }
 
-    // display dotted center line
+    // display center line
     if (editor.ui.dottedCenterFlag)
-    {
-        ptr32Dst = pixelBuffer + ((169 * SCREEN_W) + 3);
-        pixel    = palette[PAL_GENBKG2];
-
-        x = SAMPLE_AREA_WIDTH / 2;
-        while (x--)
-        {
-            *ptr32Dst  = pixel;
-             ptr32Dst += 2;
-        }
-    }
+        memset(pixelBuffer + ((169 * SCREEN_W) + 3), 0x00373737, SAMPLE_AREA_WIDTH * sizeof (int32_t));
 
     // render sample data
     if ((editor.sampler.samDisplay >= 0) && (editor.sampler.samDisplay <= MAX_SAMPLE_LEN))
     {
-        y1 = 138 + getScaledSample(scr2SmpPos(0));
-        for (x = 1; x < SAMPLE_AREA_WIDTH; ++x)
+        y1 = SAMPLE_AREA_Y_CENTER + getScaledSample(scr2SmpPos(0));
+
+        numSmpsPerPixel = editor.sampler.samDisplay / SAMPLE_AREA_WIDTH;
+        if (numSmpsPerPixel <= 1)
         {
-            y2 = 138 + getScaledSample(scr2SmpPos(x));
-            drawLine(pixelBuffer, 3 + (x - 1), y1, 3 + x, y2);
-            y1 = y2;
+            // 1:1 or zoomed in
+
+            for (x = 1; x < SAMPLE_AREA_WIDTH; ++x)
+            {
+                y2 = SAMPLE_AREA_Y_CENTER + getScaledSample(scr2SmpPos(x));
+                line(pixelBuffer, 3 + (x - 1), 3 + x, y1, y2);
+                y1 = y2;
+            }
+        }
+        else
+        {
+            // zoomed out
+
+            prevLo  = y1;
+            prevHi  = y1;
+            smpLen  = s->length;
+            smpPtr  = &modEntry->sampleData[s->offset];
+
+            for (x = 0; x < SAMPLE_AREA_WIDTH; x++)
+            {
+                smpIdx = scr2SmpPos(x);
+
+                lo =  127;
+                hi = -128;
+
+                // get peak for low/high
+                ptr8 = smpPtr + smpIdx;
+                for (i = 0; i < numSmpsPerPixel; ++i)
+                {
+                    if ((smpIdx + i) >= smpLen)
+                        break;
+
+                    smp = *ptr8++;
+                    if (smp < lo) lo = smp;
+                    if (smp > hi) hi = smp;
+                }
+
+                lo = SAMPLE_AREA_Y_CENTER + ((127 - lo) / 4);
+                hi = SAMPLE_AREA_Y_CENTER + ((127 - hi) / 4);
+
+                line(pixelBuffer, 3 + x, 3 + x, hi, lo);
+
+                if (x > 0)
+                {
+                    if (lo > prevHi) line(pixelBuffer, 2 + x, 3 + x, prevHi, lo);
+                    if (hi < prevLo) line(pixelBuffer, 2 + x, 3 + x, prevLo, hi);
+                }
+
+                prevLo = lo;
+                prevHi = hi;
+            }
         }
     }
 
@@ -336,7 +383,7 @@ void invertRange(void)
     pitch = SCREEN_W - rangeLen;
 
     pixel1 = palette[PAL_BACKGRD];
-    pixel2 = palette[PAL_QADSCP];
+    pixel2 = 0x00666666;
 
     ptr32Dst = pixelBuffer + ((138 * SCREEN_W) + 3 + start);
 
@@ -1371,7 +1418,7 @@ void sampleMarkerToBeg(void)
 {
     invertRange();
 
-    if (input.keyb.shiftKeyDown && (editor.markEndOfs > 0))
+    if (input.keyb.leftShiftKeyDown && (editor.markEndOfs > 0))
     {
         editor.markStartOfs = editor.sampler.samOffset;
     }
@@ -1395,7 +1442,7 @@ void sampleMarkerToCenter(void)
 
     invertRange();
 
-    if (input.keyb.shiftKeyDown && (editor.markEndOfs > 0))
+    if (input.keyb.leftShiftKeyDown && (editor.markEndOfs > 0))
     {
              if (editor.markStartOfs < middlePos) editor.markEndOfs   = middlePos;
         else if (editor.markEndOfs   > middlePos) editor.markStartOfs = middlePos;
@@ -1420,7 +1467,7 @@ void sampleMarkerToEnd(void)
 
     invertRange();
 
-    if (input.keyb.shiftKeyDown && (editor.markEndOfs > 0))
+    if (input.keyb.leftShiftKeyDown && (editor.markEndOfs > 0))
     {
         editor.markEndOfs = endPos;
     }
@@ -2141,6 +2188,9 @@ void samplerShowRange(void)
     editor.sampler.samDisplay = editor.markEndOfs - editor.markStartOfs;
     editor.sampler.samOffset  = editor.markStartOfs;
 
+    if ((editor.sampler.samDisplay + editor.sampler.samOffset) > editor.sampler.samLength)
+        editor.sampler.samOffset = editor.sampler.samLength - editor.sampler.samDisplay;
+
     samplerRangeAll();
     displaySample();
 }
@@ -2327,7 +2377,7 @@ void samplerEditSample(int8_t mouseButtonHeld)
     x = scr2SmpPos(input.mouse.x - 3);
     x = CLAMP(x, 0, s->length);
 
-    if (!input.keyb.shiftKeyDown)
+    if (!input.keyb.leftShiftKeyDown)
         y = (int8_t)(CLAMP(-(input.mouse.y - 169) * 4, -128, 127));
     else
         y = (int8_t)(CLAMP(-(editor.sampler.lastMouseY - 169) * 4, -128, 127));
@@ -2386,7 +2436,7 @@ void samplerEditSample(int8_t mouseButtonHeld)
 
         editor.sampler.lastMouseX = input.mouse.x;
 
-        if (!input.keyb.shiftKeyDown)
+        if (!input.keyb.leftShiftKeyDown)
             editor.sampler.lastMouseY = input.mouse.y;
     }
 

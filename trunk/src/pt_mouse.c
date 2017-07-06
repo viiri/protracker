@@ -1828,7 +1828,7 @@ void handleSamplerVolumeBox(void)
 
     if (input.mouse.rightButtonPressed)
     {
-        if (editor.ui.getLineFlag)
+        if (editor.ui.editTextFlag)
         {
             exitGetTextLine(EDIT_TEXT_NO_UPDATE);
         }
@@ -1841,7 +1841,7 @@ void handleSamplerVolumeBox(void)
         return;
     }
 
-    if (editor.ui.getLineFlag)
+    if (editor.ui.editTextFlag)
         return;
 
     // check buttons
@@ -2248,13 +2248,13 @@ void handleSamplerFiltersBox(void)
     uint8_t i;
     moduleSample_t *s;
 
-    if (input.mouse.rightButtonPressed && editor.ui.getLineFlag)
+    if (input.mouse.rightButtonPressed && editor.ui.editTextFlag)
     {
         exitGetTextLine(EDIT_TEXT_NO_UPDATE);
         return;
     }
 
-    if (editor.ui.getLineFlag || (input.mouse.lastGUIButton_2 > -1))
+    if (editor.ui.editTextFlag || (input.mouse.lastGUIButton_2 > -1))
         return;
 
     if (input.mouse.leftButtonPressed)
@@ -2720,9 +2720,9 @@ void handleTextEditing(uint8_t mouseButton)
     int32_t tmp32;
 
     // handle mouse while editing text/numbers
-    if (editor.ui.getLineFlag)
+    if (editor.ui.editTextFlag)
     {
-        if (editor.ui.getLineType != TEXT_EDIT_STRING)
+        if (editor.ui.editTextType != TEXT_EDIT_STRING)
         {
             if (mouseButton == SDL_BUTTON_RIGHT)
                 exitGetTextLine(EDIT_TEXT_NO_UPDATE);
@@ -2815,7 +2815,7 @@ void handleTextEditing(uint8_t mouseButton)
 
 void mouseWheelUpHandler(void)
 {
-    if (!editor.ui.getLineFlag      && !editor.ui.askScreenShown &&
+    if (!editor.ui.editTextFlag      && !editor.ui.askScreenShown &&
         !editor.ui.clearScreenShown && !editor.swapChannelFlag)
     {
         if (editor.ui.terminalShown)
@@ -2846,7 +2846,7 @@ void mouseWheelUpHandler(void)
 
 void mouseWheelDownHandler(void)
 {
-    if (!editor.ui.getLineFlag      && !editor.ui.askScreenShown &&
+    if (!editor.ui.editTextFlag      && !editor.ui.askScreenShown &&
         !editor.ui.clearScreenShown && !editor.swapChannelFlag)
     {
         if (editor.ui.terminalShown)
@@ -2971,7 +2971,7 @@ int8_t handleLeftMouseButton(void)
     double smp;
     moduleSample_t *s;
 
-    if (editor.swapChannelFlag || editor.ui.getLineFlag)
+    if (editor.swapChannelFlag || editor.ui.editTextFlag)
         return (false);
 
     // handle volume toolbox in sampler screen
