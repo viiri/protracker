@@ -14,16 +14,15 @@ enum
     PAL_PATCURSOR = 5,
     PAL_GENTXT    = 6,
     PAL_PATTXT    = 7,
-    PAL_SMPMRK    = 8,
     // -----------------------------
-    PAL_SAMPLLINE  = 9,
-    PAL_LOOPPIN    = 10,
-    PAL_TEXTMARK   = 11,
-    PAL_MOUSE_1    = 12,
-    PAL_MOUSE_2    = 13,
-    PAL_MOUSE_3    = 14,
+    PAL_SAMPLLINE  = 8,
+    PAL_LOOPPIN    = 9,
+    PAL_TEXTMARK   = 10,
+    PAL_MOUSE_1    = 11,
+    PAL_MOUSE_2    = 12,
+    PAL_MOUSE_3    = 13,
     // -----------------------------
-    PAL_COLORKEY = 15,
+    PAL_COLORKEY = 14,
     // -----------------------------
     PALETTE_NUM,
     // -----------------------------

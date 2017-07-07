@@ -71,11 +71,24 @@ void exitGetTextLine(uint8_t updateValue)
     uint8_t i;
     int16_t posEdPos, tmp16;
     int32_t tmp32;
+    UNICHAR *pathU;
     moduleSample_t *s;
 
     // if user updated the disk op path text
     if (editor.ui.diskOpScreenShown && (editor.ui.editObject == PTB_DO_DATAPATH))
-        diskOpSetPath(editor.currPath, DISKOP_CACHE);
+    {
+        pathU = (UNICHAR *)(calloc(PATH_MAX_LEN + 2, sizeof (UNICHAR)));
+        if (pathU != NULL)
+        {
+#ifdef _WIN32
+            MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, editor.currPath, -1, pathU, PATH_MAX_LEN);
+#else
+            strcpy(pathU, editor.currPath);
+#endif
+            diskOpSetPath(pathU, DISKOP_CACHE);
+            free(pathU);
+        }
+    }
 
     if (editor.ui.editTextType != TEXT_EDIT_STRING)
     {

@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <ctype.h> // tolower()
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -24,6 +23,7 @@
 #include "pt_modloader.h"
 #include "pt_sampleloader.h"
 #include "pt_terminal.h"
+#include "pt_unicode.h"
 
 extern int8_t forceMixerOff; // pt_audio.c
 extern uint32_t palette[PALETTE_NUM]; // pt_palette.c
@@ -55,16 +55,16 @@ static SDL_TimerID timer50Hz;
 static module_t *tempMod;
 
 #ifdef __APPLE__
-void osxSetDirToProgramDirFromArgs(char **argv);
+static void osxSetDirToProgramDirFromArgs(char **argv);
 #endif
 static void handleInput(void);
 static int8_t initializeVars(void);
-static void loadModFromArg(char *arg);
+static void loadModFromArg(char **argv);
 static void handleSigTerm(void);
-static void loadDroppedFile(char *fullPath, uint32_t fileNameLen);
-void cleanUp(void);
-void syncThreadTo60Hz(void);
-void readMouseXY(void);
+static void loadDroppedFile(char *fullPath, uint32_t fullPathLen);
+static void cleanUp(void);
+static void syncThreadTo60Hz(void);
+static void readMouseXY(void);
 
 int main(int argc, char *argv[])
 {
@@ -239,7 +239,7 @@ int main(int argc, char *argv[])
     // load a .MOD from the command arguments if passed (also ignore OS X < 10.9 -psn argument on double-click launch)
     if (((argc >= 2) && (strlen(argv[1]) > 0)) && !((argc == 2) && (!strncmp(argv[1], "-psn_", 5))))
     {
-        loadModFromArg(argv[1]);
+        loadModFromArg(argv);
     }
     else
     {
@@ -264,20 +264,6 @@ int main(int argc, char *argv[])
 
     // setup timer stuff
     next60HzTime_64bit = SDL_GetPerformanceCounter() + (uint64_t)(((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5);
-
-    {
-        uint8_t r, g, b;
-
-        r = RGB_R(palette[PAL_QADSCP]);
-        g = RGB_G(palette[PAL_QADSCP]);
-        b = RGB_B(palette[PAL_QADSCP]);
-
-        r = (uint8_t)(r / 3.5);
-        g = (uint8_t)(g / 3.5);
-        b = (uint8_t)(b / 3.5);
-
-        palette[PAL_SMPMRK] = TO_RGB(r, g, b);
-    }
 
     while (editor.programRunning)
     {
@@ -354,7 +340,7 @@ static void handleInput(void)
         else if (inputEvent.type == SDL_KEYDOWN)
         {
             if (editor.repeatKeyFlag || (input.keyb.lastRepKey != inputEvent.key.keysym.scancode))
-                keyDownHandler(inputEvent.key.keysym.scancode);
+                keyDownHandler(inputEvent.key.keysym.scancode, inputEvent.key.keysym.sym);
         }
         else if (inputEvent.type == SDL_MOUSEBUTTONUP)
         {
@@ -540,12 +526,32 @@ static int8_t initializeVars(void)
     return (true);
 }
 
-void loadModFromArg(char *arg)
+static void loadModFromArg(char **argv)
 {
+    uint32_t filenameLen;
+    UNICHAR *filenameU;
+
     editor.ui.introScreenShown = false;
     setStatusMessage(editor.allRightText, DO_CARRY);
 
-    tempMod = modLoad(arg);
+    filenameLen = strlen(argv[1]);
+
+    filenameU = (UNICHAR *)(calloc((filenameLen + 2), sizeof (UNICHAR)));
+    if (filenameU == NULL)
+    {
+        displayErrorMsg(editor.outOfMemoryText);
+        terminalPrintf(editor.modLoadOoMText);
+
+        return;
+    }
+
+#ifdef _WIN32
+    MultiByteToWideChar(CP_UTF8, 0, argv[1], -1, filenameU, filenameLen);
+#else
+    strcpy(filenameU, argv[1]);
+#endif
+
+    tempMod = modLoad(filenameU);
     if (tempMod != NULL)
     {
         modEntry->moduleLoaded = false;
@@ -563,6 +569,8 @@ void loadModFromArg(char *arg)
         // status/error message is set in the mod loader
         pointerErrorMode();
     }
+
+    free(filenameU);
 }
 
 void resetAllScreens(void)
@@ -682,7 +690,7 @@ static uint8_t testExtension(char *ext, uint8_t extLen, char *fullPath)
 
     extLen++; // add one to length (dot)
 
-    fileName = strrchr(fullPath, '\\');
+    fileName = strrchr(fullPath, DIR_DELIMITER);
     if (fileName != NULL)
         fileName++;
     else
@@ -692,57 +700,79 @@ static uint8_t testExtension(char *ext, uint8_t extLen, char *fullPath)
     if (fileNameLen >= extLen)
     {
         sprintf(begStr, "%s.", ext);
-        if (!strncmp(begStr, fileName, extLen))
+        if (!my_strnicmp(begStr, fileName, extLen))
             return (true);
 
         sprintf(endStr, ".%s", ext);
-        if (!strncmp(endStr, fileName + (fileNameLen - extLen), extLen))
+        if (!my_strnicmp(endStr, fileName + (fileNameLen - extLen), extLen))
             return (true);
     }
 
     return (false);
 }
 
-static void loadDroppedFile(char *fullPath, uint32_t fileNameLen)
+static void loadDroppedFile(char *fullPath, uint32_t fullPathLen)
 {
-    char *fileName;
+    char *fileName, *ansiName;
     uint8_t isMod;
-    uint32_t i;
+    UNICHAR *fullPathU;
 
     if (editor.diskop.isFilling || editor.isWAVRendering)
         return;
 
-    // make path all upper case (safe since this is win32 code only for now)
-    for (i = 0; i < fileNameLen; ++i)
-        fullPath[i] = (char)(toupper(fullPath[i]));
+    ansiName = (char *)(calloc(fullPathLen + 10, sizeof (char)));
+    if (ansiName == NULL)
+    {
+        displayErrorMsg(editor.outOfMemoryText);
+        terminalPrintf(editor.modLoadOoMText);
+
+        return;
+    }
+
+    fullPathU = (UNICHAR *)(calloc((fullPathLen + 2), sizeof (UNICHAR)));
+    if (fullPathU == NULL)
+    {
+        displayErrorMsg(editor.outOfMemoryText);
+        terminalPrintf(editor.modLoadOoMText);
+
+        return;
+    }
+
+#ifdef _WIN32
+    MultiByteToWideChar(CP_UTF8, 0, fullPath, -1, fullPathU, fullPathLen);
+#else
+    strcpy(fullPathU, fullPath);
+#endif
+
+    unicharToAnsi(ansiName, fullPathU, fullPathLen);
 
     // make a new pointer point to filename (strip path)
-    fileName = strrchr(fullPath, DIR_DELIMITER);
+    fileName = strrchr(ansiName, DIR_DELIMITER);
     if (fileName != NULL)
         fileName++;
     else
-        fileName = fullPath;
+        fileName = ansiName;
 
     // check if the file extension is a module (FIXME: check module by content instead..?)
     isMod = false;
-    if (testExtension("MOD", 3, fullPath))
+    if (testExtension("MOD", 3, fileName))
         isMod = true;
-    else if (testExtension("M15", 3, fullPath))
+    else if (testExtension("M15", 3, fileName))
         isMod = true;
-    else if (testExtension("STK", 3, fullPath))
+    else if (testExtension("STK", 3, fileName))
         isMod = true;
-    else if (testExtension("NST", 3, fullPath))
+    else if (testExtension("NST", 3, fileName))
         isMod = true;
-    else if (testExtension("UST", 3, fullPath))
+    else if (testExtension("UST", 3, fileName))
         isMod = true;
-    else if (testExtension("PP", 2, fullPath))
+    else if (testExtension("PP", 2, fileName))
         isMod = true;
-    else if (testExtension("NT", 2, fullPath))
+    else if (testExtension("NT", 2, fileName))
         isMod = true;
 
     if (isMod)
     {
-        tempMod = modLoad(fullPath);
+        tempMod = modLoad(fullPathU);
         if (tempMod != NULL)
         {
             modStop();
@@ -777,11 +807,14 @@ static void loadDroppedFile(char *fullPath, uint32_t fileNameLen)
     }
     else
     {
-        loadSample(fullPath, fileName);
+        loadSample(fullPathU, fileName);
     }
+
+    free(ansiName);
+    free(fullPathU);
 }
 
-void cleanUp(void) // never call this inside the main loop!
+static void cleanUp(void) // never call this inside the main loop!
 {
     audioClose();
 
@@ -809,7 +842,7 @@ void cleanUp(void) // never call this inside the main loop!
 #endif
 }
 
-void syncThreadTo60Hz(void)
+static void syncThreadTo60Hz(void)
 {
     // this routine almost never delays if we have 60Hz vsync
 
@@ -831,7 +864,7 @@ void syncThreadTo60Hz(void)
     next60HzTime_64bit += (uint64_t)(frameLength_f + 0.5);
 }
 
-void readMouseXY(void)
+static void readMouseXY(void)
 {
     int16_t x, y;
     int32_t mx, my;
@@ -866,7 +899,7 @@ void readMouseXY(void)
 }
 
 #ifdef __APPLE__
-void osxSetDirToProgramDirFromArgs(char **argv)
+static void osxSetDirToProgramDirFromArgs(char **argv)
 {
     char *tmpPath;
     int32_t i, tmpPathLen;

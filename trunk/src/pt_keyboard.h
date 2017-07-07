@@ -21,7 +21,7 @@ LRESULT CALLBACK lowLevelKeyboardProc(int32_t nCode, WPARAM wParam, LPARAM lPara
 void updateKeyModifiers(void);
 void handleKeyRepeat(SDL_Scancode keyEntry);
 void keyUpHandler(SDL_Scancode keyEntry);
-void keyDownHandler(SDL_Scancode keyEntry);
+void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode);
 void handleTextEditInputChar(char textChar);
 
 #endif

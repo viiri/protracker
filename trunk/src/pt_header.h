@@ -3,6 +3,7 @@
 
 #include <SDL2/SDL.h>
 #include <stdint.h>
+#include "pt_unicode.h"
 
 #ifdef _WIN32
 #define PATH_MAX_LEN 260
@@ -324,7 +325,8 @@ struct editor_t
     volatile int32_t *hpCutOffDisp;
 
     char mixText[16], outOfMemoryText[18], modLoadOoMText[39], diskOpListOoMText[42];
-    char allRightText[10], *fileNameTmp, *entryNameTmp, *currPath;
+    char allRightText[10], *entryNameTmp, *currPath;
+    UNICHAR *fileNameTmp, *currPathU;
 
     int8_t smpRedoFinetunes[MOD_SAMPLES], smpRedoVolumes[MOD_SAMPLES], multiModeNext[4];
     int8_t *smpRedoBuffer[MOD_SAMPLES], *tempSample, errorMsgActive, errorMsgBlock, currSample;
