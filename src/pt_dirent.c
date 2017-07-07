@@ -12,28 +12,29 @@
 #include <stdint.h>
 #include <windows.h>
 #include "pt_dirent.h"
+#include "pt_unicode.h"
 
-DIR *opendir(const char *name)
+DIR *opendir(UNICHAR *name)
 {
-    char path[FILENAME_MAX];
+    UNICHAR path[FILENAME_MAX];
     DIR *dirp;
 
-    if (strlen(name) > (FILENAME_MAX - 3))
+    if (UNICHAR_STRLEN(name) > (FILENAME_MAX - 3))
         return (NULL);
 
     dirp = (DIR *)(malloc(sizeof (struct DIR)));
     if (dirp == NULL)
         return (NULL);
 
-    if (GetFullPathNameA(name, FILENAME_MAX - 3, path, NULL) == 0)
+    if (GetFullPathNameW(name, FILENAME_MAX - 3, path, NULL) == 0)
     {
         free(dirp);
         return (NULL);
     }
 
-    strcat(path, "\\*"); // append '\*' to end of path
+    UNICHAR_STRCAT(path, L"\\*"); // append '\*' to end of path
 
-    dirp->fHandle = FindFirstFileA(path, &dirp->fData);
+    dirp->fHandle = FindFirstFileW(path, &dirp->fData);
     if (dirp->fHandle == INVALID_HANDLE_VALUE)
     {
         free(dirp);
@@ -50,15 +51,15 @@ struct dirent *readdir(DIR *dirp)
     if ((dirp == NULL) || (dirp->fHandle == NULL))
         return (NULL);
 
-    if (FindNextFileA(dirp->fHandle, &dirp->fData) == 0)
+    if (FindNextFileW(dirp->fHandle, &dirp->fData) == 0)
     {
         FindClose(dirp->fHandle);
         dirp->fHandle = NULL;
         return (NULL);
     }
 
-    strcpy(dirp->fd.d_name, dirp->fData.cFileName);
-    dirp->fd.d_namlen = (uint16_t)(strlen(dirp->fd.d_name));
+    UNICHAR_STRCPY(dirp->fd.d_name, dirp->fData.cFileName);
+    dirp->fd.d_namlen = (uint16_t)(UNICHAR_STRLEN(dirp->fd.d_name));
     dirp->fd.d_type = (dirp->fData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? DT_DIR : DT_REG;
     dirp->fd.d_size = (dirp->fData.nFileSizeHigh > 0) ? 0xFFFFFFFF : dirp->fData.nFileSizeLow;
 

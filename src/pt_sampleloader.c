@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
-#include <ctype.h> // for toupper()/tolower()
+#include <ctype.h> // tolower()/toupper()
 #ifdef _WIN32
 #include <io.h>
 #else
@@ -22,6 +22,7 @@
 #include "pt_visuals.h"
 #include "pt_helpers.h"
 #include "pt_terminal.h"
+#include "pt_unicode.h"
 
 enum
 {
@@ -29,16 +30,16 @@ enum
     WAVE_FORMAT_IEEE_FLOAT = 0x0003
 };
 
-int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSampling);
-int8_t loadIFFSample(const char *fileName, char *entryName);
-int8_t loadRAWSample(const char *fileName, char *entryName);
+static int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSampling);
+static int8_t loadIFFSample(UNICHAR *fileName, char *entryName);
+static int8_t loadRAWSample(UNICHAR *fileName, char *entryName);
 
 void extLoadWAVSampleCallback(int8_t downsample)
 {
     loadWAVSample(editor.fileNameTmp, editor.entryNameTmp, downsample);
 }
 
-int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSampling)
+int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSampling)
 {
     /*
     ** - Supports 8-bit, 16-bit, 24-bit, 32-bit, 32-bit float
@@ -78,11 +79,11 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
         memset(editor.fileNameTmp,  0, PATH_MAX_LEN);
         memset(editor.entryNameTmp, 0, PATH_MAX_LEN);
 
-        strcpy(editor.fileNameTmp,  fileName);
+        UNICHAR_STRCPY(editor.fileNameTmp, fileName);
         strcpy(editor.entryNameTmp, entryName);
     }
 
-    f = fopen(fileName, "rb");
+    f = UNICHAR_FOPEN(fileName, "rb");
     if (f == NULL)
     {
         displayErrorMsg("FILE I/O ERROR !");
@@ -696,7 +697,7 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
         for (i = 0; i < 21; ++i)
         {
             if (i < inamLen)
-                s->text[i] = (char)(tolower(fgetc(f)));
+                s->text[i] = (char)(toupper(fgetc(f)));
             else
                 s->text[i] = '\0';
         }
@@ -715,7 +716,7 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
     {
         nameLen = strlen(entryName);
         for (i = 0; i < 21; ++i)
-           s->text[i] = (i < nameLen) ? (char)(tolower(entryName[i])) : '\0';
+           s->text[i] = (i < nameLen) ? toupper(entryName[i]) : '\0';
 
         s->text[21] = '\0';
         s->text[22] = '\0';
@@ -723,7 +724,7 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
 
     // remove .wav from end of sample name (if present)
     nameLen = strlen(s->text);
-    if ((nameLen >= 4) && !strncmp(&s->text[nameLen - 4], ".wav", 4))
+    if ((nameLen >= 4) && !strncmp(&s->text[nameLen - 4], ".WAV", 4))
           memset(&s->text[nameLen - 4], '\0',   4);
 
     editor.sampleZero = false;
@@ -739,11 +740,11 @@ int8_t loadWAVSample(const char *fileName, char *entryName, int8_t forceDownSamp
     return (true);
 }
 
-int8_t loadIFFSample(const char *fileName, char *entryName)
+int8_t loadIFFSample(UNICHAR *fileName, char *entryName)
 {
     char tmpCharBuf[23];
     int8_t *sampleData;
-    uint8_t nameFound, skippingBlocks, is16Bit;
+    uint8_t nameFound, is16Bit;
     int16_t sample16, *ptr16;
     int32_t filesize;
     uint32_t i, sampleLength, sampleLoopStart, sampleLoopLength;
@@ -758,7 +759,7 @@ int8_t loadIFFSample(const char *fileName, char *entryName)
     bodyPtr = 0; bodyLen = 0;
     namePtr = 0; nameLen = 0;
 
-    f = fopen(fileName, "rb");
+    f = UNICHAR_FOPEN(fileName, "rb");
     if (f == NULL)
     {
         displayErrorMsg("FILE I/O ERROR !");
@@ -782,7 +783,6 @@ int8_t loadIFFSample(const char *fileName, char *entryName)
     is16Bit = !strncmp(tmpCharBuf, "16SV", 4);
 
     sampleLength   = 0;
-    skippingBlocks = true;
     nameFound      = false;
     sampleVolume   = 65536; // max volume
 
@@ -984,18 +984,18 @@ int8_t loadIFFSample(const char *fileName, char *entryName)
     {
         nameLen = strlen(tmpCharBuf);
         for (i = 0; i < nameLen; ++i)
-            s->text[i] = (char)(tolower(tmpCharBuf[i]));
+            s->text[i] = toupper(tmpCharBuf[i]);
     }
     else
     {
         nameLen = strlen(entryName);
         for (i = 0; i < nameLen; ++i)
-            s->text[i] = (char)(tolower(entryName[i]));
+            s->text[i] = toupper(entryName[i]);
     }
 
     // remove .iff from end of sample name (if present)
     nameLen = strlen(s->text);
-    if ((nameLen >= 4) && !strncmp(&s->text[nameLen - 4], ".iff", 4))
+    if ((nameLen >= 4) && !strncmp(&s->text[nameLen - 4], ".IFF", 4))
           memset(&s->text[nameLen - 4], '\0', 4);
 
     editor.sampleZero = false;
@@ -1011,13 +1011,16 @@ int8_t loadIFFSample(const char *fileName, char *entryName)
     return (false);
 }
 
-int8_t loadRAWSample(const char *fileName, char *entryName)
+int8_t loadRAWSample(UNICHAR *fileName, char *entryName)
 {
     uint8_t i;
     uint32_t nameLen, fileSize;
     FILE *f;
+    moduleSample_t *s;
 
-    f = fopen(fileName, "rb");
+    s = &modEntry->samples[editor.currSample];
+
+    f = UNICHAR_FOPEN(fileName, "rb");
     if (f == NULL)
     {
         displayErrorMsg("FILE I/O ERROR !");
@@ -1036,24 +1039,24 @@ int8_t loadRAWSample(const char *fileName, char *entryName)
 
     mixerKillVoiceIfReadingSample(editor.currSample);
 
-    memset(modEntry->sampleData + modEntry->samples[editor.currSample].offset, 0, MAX_SAMPLE_LEN);
-    fread(modEntry->sampleData + modEntry->samples[editor.currSample].offset, 1, fileSize, f);
+    memset(modEntry->sampleData + s->offset, 0, MAX_SAMPLE_LEN);
+    fread(modEntry->sampleData + s->offset, 1, fileSize, f);
     fclose(f);
 
     // set sample attributes
-    modEntry->samples[editor.currSample].volume     = 64;
-    modEntry->samples[editor.currSample].fineTune   = 0;
-    modEntry->samples[editor.currSample].length     = fileSize;
-    modEntry->samples[editor.currSample].loopStart  = 0;
-    modEntry->samples[editor.currSample].loopLength = 2;
+    s->volume     = 64;
+    s->fineTune   = 0;
+    s->length     = fileSize;
+    s->loopStart  = 0;
+    s->loopLength = 2;
 
     // copy over sample name
     nameLen = strlen(entryName);
     for (i = 0; i < 21; ++i)
-        modEntry->samples[editor.currSample].text[i] = (i < nameLen) ? (char)(tolower(entryName[i])) : '\0';
+        s->text[i] = (i < nameLen) ? toupper(entryName[i]) : '\0';
 
-    modEntry->samples[editor.currSample].text[21] = '\0';
-    modEntry->samples[editor.currSample].text[22] = '\0';
+    s->text[21] = '\0';
+    s->text[22] = '\0';
 
     editor.sampleZero = false;
     editor.samplePos  = 0;
@@ -1062,18 +1065,18 @@ int8_t loadRAWSample(const char *fileName, char *entryName)
     updateCurrSample();
     fillSampleRedoBuffer(editor.currSample);
 
-    terminalPrintf("RAW sample \"%s\" loaded into sample slot %02x\n", modEntry->samples[editor.currSample].text, editor.currSample + 1);
+    terminalPrintf("RAW sample \"%s\" loaded into sample slot %02x\n", s->text, editor.currSample + 1);
 
     updateWindowTitle(MOD_IS_MODIFIED);
     return (true);
 }
 
-int8_t loadSample(const char *fileName, char *entryName)
+int8_t loadSample(UNICHAR *fileName, char *entryName)
 {
     uint32_t fileSize, ID;
     FILE *f;
 
-    f = fopen(fileName, "rb");
+    f = UNICHAR_FOPEN(fileName, "rb");
     if (f == NULL)
     {
         displayErrorMsg("FILE I/O ERROR !");

@@ -1763,7 +1763,7 @@ void positionDownButton(void)
 
 void diskOpLoadFile(uint32_t fileEntryRow)
 {
-    char *filePath;
+    UNICHAR *filePath;
     module_t *tempMod;
 
     // if we clicked on an empty space, return...
@@ -1772,11 +1772,11 @@ void diskOpLoadFile(uint32_t fileEntryRow)
 
     if (diskOpEntryIsDir(fileEntryRow))
     {
-        diskOpSetPath(diskOpGetEntry(fileEntryRow), DISKOP_CACHE);
+        diskOpSetPath(diskOpGetUnicodeEntry(fileEntryRow), DISKOP_CACHE);
     }
     else
     {
-        filePath = diskOpGetEntry(fileEntryRow);
+        filePath = diskOpGetUnicodeEntry(fileEntryRow);
 
         if (filePath != NULL)
         {
@@ -1811,7 +1811,7 @@ void diskOpLoadFile(uint32_t fileEntryRow)
             }
             else if (editor.diskop.mode == DISKOP_MODE_SMP)
             {
-                loadSample(filePath, diskOpGetEntry(fileEntryRow));
+                loadSample(filePath, diskOpGetAnsiEntry(fileEntryRow));
             }
         }
     }
@@ -5256,7 +5256,15 @@ int8_t handleLeftMouseButton(void)
                 case PTB_SA_EXIT: exitFromSam();   break;
 
                 case PTB_DO_FILEAREA: diskOpLoadFile((input.mouse.y - 34) / 6); break;
-                case PTB_DO_PARENT:   diskOpSetPath("..", DISKOP_CACHE);        break;
+                case PTB_DO_PARENT:
+                {
+#ifdef _WIN32
+                    diskOpSetPath(L"..", DISKOP_CACHE);
+#else
+                    diskOpSetPath("..", DISKOP_CACHE);
+#endif
+                }
+                break;
 
                 case PTB_DISKOP:
                 {

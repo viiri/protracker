@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <ctype.h> // toupper()
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -12,6 +13,33 @@
 #include "pt_palette.h"
 
 extern SDL_Window *window; // pt_main.c
+
+int32_t my_strnicmp(const char *s1, const char *s2, size_t n)
+{
+    const char *s2end = s2 + n;
+
+    while ((s2 < s2end) && (*s2 != 0) && (toupper(*s1) == toupper(*s2)))
+    {
+        ++s1;
+        ++s2;
+    }
+
+    if (s2end == s2)
+        return (0);
+
+    return (int32_t)(toupper(*s1) - toupper(*s2));
+}
+
+int32_t my_stricmp(const char *s1, const char *s2)
+{
+    while ((*s2 != '\0') && (toupper(*s1) == toupper(*s2)))
+    {
+        ++s1;
+        ++s2;
+    }
+
+    return (int32_t)(toupper(*s1) - toupper(*s2));
+}
 
 void showErrorMsgBox(const char *fmt, ...)
 {

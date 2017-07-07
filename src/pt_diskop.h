@@ -2,6 +2,7 @@
 #define __PT_DISKOP_H
 
 #include <stdint.h>
+#include "pt_unicode.h"
 
 enum
 {
@@ -16,8 +17,9 @@ enum
 void handleEntryJumping(char jumpToChar);
 int8_t diskOpEntryIsEmpty(int32_t fileIndex);
 int8_t diskOpEntryIsDir(int32_t fileIndex);
-char *diskOpGetEntry(int32_t fileIndex);
-int8_t diskOpSetPath(const char *path, uint8_t cache);
+char *diskOpGetAnsiEntry(int32_t fileIndex);
+UNICHAR *diskOpGetUnicodeEntry(int32_t fileIndex);
+int8_t diskOpSetPath(UNICHAR *path, uint8_t cache);
 void diskOpSetInitPath(void);
 void diskOpRenderFileList(uint32_t *frameBuffer);
 int8_t allocDiskOpVars(void);

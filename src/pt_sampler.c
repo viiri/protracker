@@ -383,7 +383,7 @@ void invertRange(void)
     pitch = SCREEN_W - rangeLen;
 
     pixel1 = palette[PAL_BACKGRD];
-    pixel2 = 0x00666666;
+    pixel2 = palette[PAL_QADSCP];
 
     ptr32Dst = pixelBuffer + ((138 * SCREEN_W) + 3 + start);
 
@@ -393,8 +393,10 @@ void invertRange(void)
         x = rangeLen;
         while (x--)
         {
-                 if (*ptr32Dst == pixel1) *ptr32Dst = pixel2;
-            else if (*ptr32Dst == pixel2) *ptr32Dst = pixel1;
+                 if (*ptr32Dst ==     pixel1) *ptr32Dst = 0x00666666;
+            else if (*ptr32Dst == 0x00666666) *ptr32Dst = pixel1;
+            else if (*ptr32Dst == 0x00CCCCCC) *ptr32Dst = pixel2;
+            else if (*ptr32Dst ==     pixel2) *ptr32Dst = 0x00CCCCCC;
 
             ptr32Dst++;
         }

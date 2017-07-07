@@ -146,6 +146,7 @@
     <ClCompile Include="..\..\src\gfx\pt_gfx_vumeter.c" />
     <ClCompile Include="..\..\src\gfx\pt_gfx_yes_no_dialog.c" />
     <ClCompile Include="..\..\src\pt_terminal.c" />
+    <ClCompile Include="..\..\src\pt_unicode.c" />
     <ClCompile Include="..\..\src\pt_visuals.c" />
     <ClInclude Include="..\..\src\pt_audio.h" />
     <ClInclude Include="..\..\src\pt_blep.h" />
@@ -165,6 +166,7 @@
     <ClInclude Include="..\..\src\pt_tables.h" />
     <ClInclude Include="..\..\src\pt_terminal.h" />
     <ClInclude Include="..\..\src\pt_textout.h" />
+    <ClInclude Include="..\..\src\pt_unicode.h" />
     <ClInclude Include="..\..\src\pt_visuals.h" />
     <ClCompile Include="..\..\src\pt_audio.c" />
     <ClCompile Include="..\..\src\pt_blep.c" />

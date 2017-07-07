@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <ctype.h> // for toupper()/tolower()
 #include <math.h>
+#include <ctype.h> // tolower()
 #include <SDL2/SDL.h>
 #ifdef _WIN32
 #include <direct.h>
@@ -34,7 +34,8 @@ typedef struct fileEntry_t
 {
     uint8_t type;
     uint32_t size;
-    char *filename, *dateChanged;
+    UNICHAR *name;
+    char *ansiName, *dateChanged;
 } fileEntry_t;
 
 static fileEntry_t *diskOpEntry = NULL;
@@ -54,12 +55,12 @@ void handleEntryJumping(char jumpToChar)
             {
                 for (j = 0; j < 10; ++j)
                 {
-                    if (diskOpEntry[i + j].filename != NULL)
+                    if (diskOpEntry[i + j].ansiName != NULL)
                     {
                         if (diskOpEntry[i + j].type == DISKOP_DIR)
-                            cmpChar = (char)(tolower(diskOpEntry[i + j].filename[1])); // skip dir. sorting byte
+                            cmpChar = (char)(tolower(diskOpEntry[i + j].ansiName[1])); // skip dir. sorting byte
                         else
-                            cmpChar = (char)(tolower(diskOpEntry[i + j].filename[0]));
+                            cmpChar = (char)(tolower(diskOpEntry[i + j].ansiName[0]));
 
                         if (jumpToChar == cmpChar)
                         {
@@ -82,12 +83,12 @@ void handleEntryJumping(char jumpToChar)
             // with given character.
             for (i = 0; i < editor.diskop.numFiles; ++i)
             {
-                if (diskOpEntry[i].filename != NULL)
+                if (diskOpEntry[i].ansiName != NULL)
                 {
                     if (diskOpEntry[i].type == DISKOP_DIR)
-                        cmpChar = (char)(tolower(diskOpEntry[i].filename[1])); // skip dir. sorting byte
+                        cmpChar = (char)(tolower(diskOpEntry[i].ansiName[1])); // skip dir. sorting byte
                     else
-                        cmpChar = (char)(tolower(diskOpEntry[i].filename[0]));
+                        cmpChar = (char)(tolower(diskOpEntry[i].ansiName[0]));
 
                     if (jumpToChar == cmpChar)
                     {
@@ -126,7 +127,7 @@ int8_t diskOpEntryIsDir(int32_t fileIndex)
     return (-1); // couldn't look up entry
 }
 
-char *diskOpGetEntry(int32_t fileIndex)
+char *diskOpGetAnsiEntry(int32_t fileIndex)
 {
     char *filename;
 
@@ -134,7 +135,7 @@ char *diskOpGetEntry(int32_t fileIndex)
     {
         if (!diskOpEntryIsEmpty(fileIndex))
         {
-            filename = diskOpEntry[editor.diskop.scrollOffset + fileIndex].filename;
+            filename = diskOpEntry[editor.diskop.scrollOffset + fileIndex].ansiName;
             if ((filename == NULL) || (filename[0] == '\0'))
                 return (NULL);
 
@@ -148,14 +149,37 @@ char *diskOpGetEntry(int32_t fileIndex)
     return (NULL);
 }
 
+UNICHAR *diskOpGetUnicodeEntry(int32_t fileIndex)
+{
+    UNICHAR *filenameU;
+
+    if (diskOpEntry != NULL)
+    {
+        if (!diskOpEntryIsEmpty(fileIndex))
+        {
+            filenameU = diskOpEntry[editor.diskop.scrollOffset + fileIndex].name;
+            if ((filenameU == NULL) || (filenameU[0] == '\0'))
+                return (NULL);
+
+            return (filenameU);
+        }
+    }
+
+    return (NULL);
+}
+
 void setVisualPathToCwd(void)
 {
-    memset(editor.currPath, 0, PATH_MAX_LEN + 1);
-    getcwd(editor.currPath, PATH_MAX_LEN);
+    memset(editor.currPath, 0, PATH_MAX_LEN + 10);
+    memset(editor.currPathU, 0, (PATH_MAX_LEN + 2) * sizeof (UNICHAR));
+    UNICHAR_GETCWD(editor.currPathU, PATH_MAX_LEN);
+
+    unicharToAnsi(editor.currPath, editor.currPathU, PATH_MAX_LEN);
+
     editor.ui.updateDiskOpPathText = true;
 }
 
-int8_t diskOpSetPath(const char *path, uint8_t cache)
+int8_t diskOpSetPath(UNICHAR *path, uint8_t cache)
 {
     DIR *dirp;
 
@@ -176,7 +200,7 @@ int8_t diskOpSetPath(const char *path, uint8_t cache)
     }
     closedir(dirp);
 
-    if ((path != NULL) && (*path != '\0') && (chdir(path) == 0))
+    if (UNICHAR_CHDIR(path) == 0)
     {
         setVisualPathToCwd();
 
@@ -197,17 +221,32 @@ int8_t diskOpSetPath(const char *path, uint8_t cache)
 
 void diskOpSetInitPath(void)
 {
+    UNICHAR *pathTmp;
+
     if (ptConfig.defaultDiskOpDir[0] != '\0') // if DEFAULTDIR is set or not in config
-        diskOpSetPath(ptConfig.defaultDiskOpDir, DISKOP_CACHE);
+    {
+        pathTmp = (UNICHAR *)(calloc(PATH_MAX_LEN + 2, sizeof (UNICHAR)));
+        if (pathTmp != NULL)
+        {
+#ifdef _WIN32
+            MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, ptConfig.defaultDiskOpDir,  -1, pathTmp, PATH_MAX_LEN);
+#else
+            strcpy(pathTmp, ptConfig.defaultDiskOpDir);
+#endif
+            diskOpSetPath(pathTmp, DISKOP_CACHE);
+            free(pathTmp);
+        }
+    }
 }
 
 int8_t allocDiskOpVars(void)
 {
-    editor.fileNameTmp  = (char *)(calloc(PATH_MAX_LEN + 1, sizeof (char)));
-    editor.entryNameTmp = (char *)(calloc(PATH_MAX_LEN + 1, sizeof (char)));
-    editor.currPath     = (char *)(calloc(PATH_MAX_LEN + 1, sizeof (char)));
+    editor.fileNameTmp  = (UNICHAR *)(calloc(PATH_MAX_LEN + 2, sizeof (UNICHAR)));
+    editor.entryNameTmp =    (char *)(calloc(PATH_MAX_LEN + 10, sizeof (char)));
+    editor.currPath     =    (char *)(calloc(PATH_MAX_LEN + 10, sizeof (char)));
+    editor.currPathU    = (UNICHAR *)(calloc(PATH_MAX_LEN + 2, sizeof (UNICHAR)));
 
-    if ((editor.fileNameTmp == NULL) || (editor.entryNameTmp == NULL) ||(editor.currPath == NULL))
+    if ((editor.fileNameTmp == NULL) || (editor.entryNameTmp == NULL) || (editor.currPath == NULL) || (editor.currPathU == NULL))
         return (false); // allocated leftovers are free'd lateron
 
     return (true);
@@ -218,6 +257,7 @@ void deAllocDiskOpVars(void)
     if (editor.fileNameTmp  != NULL) free(editor.fileNameTmp);
     if (editor.entryNameTmp != NULL) free(editor.entryNameTmp);
     if (editor.currPath     != NULL) free(editor.currPath);
+    if (editor.currPathU    != NULL) free(editor.currPathU);
 }
 
 void freeDiskOpFileMem(void)
@@ -233,7 +273,8 @@ void freeDiskOpFileMem(void)
         {
             for (i = 0; i < editor.diskop.numFiles; ++i)
             {
-                if (diskOpEntry[i].filename    != NULL) free(diskOpEntry[i].filename);
+                if (diskOpEntry[i].ansiName    != NULL) free(diskOpEntry[i].ansiName);
+                if (diskOpEntry[i].name        != NULL) free(diskOpEntry[i].name);
                 if (diskOpEntry[i].dateChanged != NULL) free(diskOpEntry[i].dateChanged);
             }
 
@@ -261,7 +302,8 @@ void allocDiskOpMem(void)
     for (i = 0; i < editor.diskop.numFiles; ++i)
     {
         diskOpEntry[i].dateChanged = NULL;
-        diskOpEntry[i].filename = NULL;
+        diskOpEntry[i].ansiName = NULL;
+        diskOpEntry[i].name = NULL;
         diskOpEntry[i].size = 0;
         diskOpEntry[i].type = DISKOP_FILE;
     }
@@ -274,8 +316,8 @@ static int32_t diskOpSortCmp(const void *a, const void *b)
 
     // no need to check pointers, this routine is used sanely
 
-    s1 = (const char *)((*(fileEntry_t *)(a)).filename);
-    s2 = (const char *)((*(fileEntry_t *)(b)).filename);
+    s1 = (const char *)((*(fileEntry_t *)(a)).ansiName);
+    s2 = (const char *)((*(fileEntry_t *)(b)).ansiName);
 
     do
     {
@@ -283,22 +325,6 @@ static int32_t diskOpSortCmp(const void *a, const void *b)
         l = ((*s2 >= 'A') && (*s2 <= 'Z')) ? (*s2++ + ('a' - 'A')) : *s2++;
     }
     while (f && (f == l));
-
-    return (f - l);
-}
-
-static int32_t my_strnicmp(const char *s1, const char *s2, int32_t n)
-{
-    int32_t f, l;
-
-    // no need to check pointers, this routine is used sanely
-
-    do
-    {
-        f = ((*s1 >= 'A') && (*s1 <= 'Z')) ? (*s1++ + ('a' - 'A')) : *s1++;
-        l = ((*s2 >= 'A') && (*s2 <= 'Z')) ? (*s2++ + ('a' - 'A')) : *s2++;
-    }
-    while (--n && f && (f == l));
 
     return (f - l);
 }
@@ -317,10 +343,10 @@ static int8_t diskOpFillBufferMod(void)
     editor.diskop.scrollOffset = 0;
 
     // do we have a path set?
-    if (editor.currPath[0] == '\0')
+    if (editor.currPathU[0] == '\0')
         setVisualPathToCwd();
 
-    dir = opendir(editor.currPath);
+    dir = opendir(editor.currPathU);
     if (dir == NULL)
     {
         setVisualPathToCwd();
@@ -355,19 +381,29 @@ static int8_t diskOpFillBufferMod(void)
         if (ent->d_name[0] == '\0')
             continue;
 
-        fileNameLength = strlen(ent->d_name);
+#ifndef _WIN32
+        // don't handle "dot" files/dirs
+        if ((ent->d_name[0] == '.') && (ent->d_name[1] != '.'))
+            continue;
+#endif
+
+        // don't handle "." directory
+        if ((ent->d_type == DT_DIR) && ((ent->d_name[0] == '.') && (ent->d_name[1] == '\0')))
+            continue;
+
+        fileNameLength = UNICHAR_STRLEN(ent->d_name);
         if (ent->d_type == DT_REG)
         {
             if (fileNameLength >= 4)
             {
                 if (
-                       (!my_strnicmp(ent->d_name, "MOD.", 4) || !my_strnicmp(&ent->d_name[fileNameLength - 4], ".MOD", 4))
-                    || (!my_strnicmp(ent->d_name, "STK.", 4) || !my_strnicmp(&ent->d_name[fileNameLength - 4], ".STK", 4))
-                    || (!my_strnicmp(ent->d_name, "M15.", 4) || !my_strnicmp(&ent->d_name[fileNameLength - 4], ".M15", 4))
-                    || (!my_strnicmp(ent->d_name, "NST.", 4) || !my_strnicmp(&ent->d_name[fileNameLength - 4], ".NST", 4))
-                    || (!my_strnicmp(ent->d_name, "UST.", 4) || !my_strnicmp(&ent->d_name[fileNameLength - 4], ".UST", 4))
-                    || (!my_strnicmp(ent->d_name, "PP.",  3) || !my_strnicmp(&ent->d_name[fileNameLength - 3],  ".PP", 3))
-                    || (!my_strnicmp(ent->d_name, "NT.",  3) || !my_strnicmp(&ent->d_name[fileNameLength - 3],  ".NT", 3))
+                       (!UNICHAR_STRICMP(ent->d_name, "MOD.", 4) || !UNICHAR_STRICMP(&ent->d_name[fileNameLength - 4], ".MOD", 4))
+                    || (!UNICHAR_STRICMP(ent->d_name, "STK.", 4) || !UNICHAR_STRICMP(&ent->d_name[fileNameLength - 4], ".STK", 4))
+                    || (!UNICHAR_STRICMP(ent->d_name, "M15.", 4) || !UNICHAR_STRICMP(&ent->d_name[fileNameLength - 4], ".M15", 4))
+                    || (!UNICHAR_STRICMP(ent->d_name, "NST.", 4) || !UNICHAR_STRICMP(&ent->d_name[fileNameLength - 4], ".NST", 4))
+                    || (!UNICHAR_STRICMP(ent->d_name, "UST.", 4) || !UNICHAR_STRICMP(&ent->d_name[fileNameLength - 4], ".UST", 4))
+                    || (!UNICHAR_STRICMP(ent->d_name, "PP.",  3) || !UNICHAR_STRICMP(&ent->d_name[fileNameLength - 3],  ".PP", 3))
+                    || (!UNICHAR_STRICMP(ent->d_name, "NT.",  3) || !UNICHAR_STRICMP(&ent->d_name[fileNameLength - 3],  ".NT", 3))
                    )
                 {
                     editor.diskop.numFiles++;
@@ -376,8 +412,7 @@ static int8_t diskOpFillBufferMod(void)
         }
         else
         {
-            if (!((ent->d_name[0] == '.') && (ent->d_name[1] == '\0')))
-                editor.diskop.numFiles++;
+            editor.diskop.numFiles++;
         }
     }
 
@@ -390,7 +425,7 @@ static int8_t diskOpFillBufferMod(void)
     if (!editor.errorMsgActive)
         pointerSetMode(POINTER_MODE_READ_DIR, NO_CARRY);
 
-    dir = opendir(editor.currPath); // we opened this earlier, we know it works
+    dir = opendir(editor.currPathU); // we opened this earlier, we know it works
 
     // fill disk op. buffer (type, size, path, file name, date changed)
 
@@ -410,20 +445,30 @@ static int8_t diskOpFillBufferMod(void)
         if (ent->d_name[0] == '\0')
             continue;
 
-        fileNameLength = strlen(ent->d_name);
+#ifndef _WIN32
+        // don't handle "dot" files/dirs
+        if ((ent->d_name[0] == '.') && (ent->d_name[1] != '.'))
+            continue;
+#endif
+
+        // don't handle "." directory
+        if ((ent->d_type == DT_DIR) && ((ent->d_name[0] == '.') && (ent->d_name[1] == '\0')))
+            continue;
+
+        fileNameLength = UNICHAR_STRLEN(ent->d_name);
         if (ent->d_type == DT_REG)
         {
             if (fileNameLength < 4)
                 continue;
 
             if (
-                   (my_strnicmp(ent->d_name, "MOD.", 4) && my_strnicmp(&ent->d_name[fileNameLength - 4], ".MOD", 4))
-                && (my_strnicmp(ent->d_name, "STK.", 4) && my_strnicmp(&ent->d_name[fileNameLength - 4], ".STK", 4))
-                && (my_strnicmp(ent->d_name, "M15.", 4) && my_strnicmp(&ent->d_name[fileNameLength - 4], ".M15", 4))
-                && (my_strnicmp(ent->d_name, "NST.", 4) && my_strnicmp(&ent->d_name[fileNameLength - 4], ".NST", 4))
-                && (my_strnicmp(ent->d_name, "UST.", 4) && my_strnicmp(&ent->d_name[fileNameLength - 4], ".UST", 4))
-                && (my_strnicmp(ent->d_name,  "PP.", 3) && my_strnicmp(&ent->d_name[fileNameLength - 3],  ".PP", 3))
-                && (my_strnicmp(ent->d_name,  "NT.", 3) && my_strnicmp(&ent->d_name[fileNameLength - 3],  ".NT", 3))
+                   (UNICHAR_STRICMP(ent->d_name, "MOD.", 4) && UNICHAR_STRICMP(&ent->d_name[fileNameLength - 4], ".MOD", 4))
+                && (UNICHAR_STRICMP(ent->d_name, "STK.", 4) && UNICHAR_STRICMP(&ent->d_name[fileNameLength - 4], ".STK", 4))
+                && (UNICHAR_STRICMP(ent->d_name, "M15.", 4) && UNICHAR_STRICMP(&ent->d_name[fileNameLength - 4], ".M15", 4))
+                && (UNICHAR_STRICMP(ent->d_name, "NST.", 4) && UNICHAR_STRICMP(&ent->d_name[fileNameLength - 4], ".NST", 4))
+                && (UNICHAR_STRICMP(ent->d_name, "UST.", 4) && UNICHAR_STRICMP(&ent->d_name[fileNameLength - 4], ".UST", 4))
+                && (UNICHAR_STRICMP(ent->d_name,  "PP.", 3) && UNICHAR_STRICMP(&ent->d_name[fileNameLength - 3],  ".PP", 3))
+                && (UNICHAR_STRICMP(ent->d_name,  "NT.", 3) && UNICHAR_STRICMP(&ent->d_name[fileNameLength - 3],  ".NT", 3))
                 )
             {
                 continue;
@@ -433,16 +478,13 @@ static int8_t diskOpFillBufferMod(void)
         }
         else
         {
-            if ((ent->d_name[0] == '.') && (ent->d_name[1] == '\0'))
-                continue;
-
             diskOpEntry[fileIndex].type = DISKOP_DIR;
         }
 
         // file/dir is valid, let's move on
 
-        diskOpEntry[fileIndex].filename = (char *)(malloc(1 + fileNameLength + 1));
-        if (diskOpEntry[fileIndex].filename == NULL)
+        diskOpEntry[fileIndex].name = (UNICHAR *)(malloc((fileNameLength + 2) * sizeof (UNICHAR)));
+        if (diskOpEntry[fileIndex].name == NULL)
         {
             closedir(dir);
             freeDiskOpFileMem();
@@ -453,11 +495,25 @@ static int8_t diskOpFillBufferMod(void)
             return (false);
         }
 
-        strcpy(diskOpEntry[fileIndex].filename, ent->d_name);
+        UNICHAR_STRCPY(diskOpEntry[fileIndex].name, ent->d_name);
 
         // get file size and modification date
         if (diskOpEntry[fileIndex].type == DISKOP_FILE)
         {
+            diskOpEntry[fileIndex].ansiName = (char *)(calloc(fileNameLength + 10, sizeof (char)));
+            if (diskOpEntry[fileIndex].ansiName == NULL)
+            {
+                closedir(dir);
+                freeDiskOpFileMem();
+
+                displayErrorMsg(editor.outOfMemoryText);
+                terminalPrintf(editor.diskOpListOoMText);
+
+                return (false);
+            }
+
+            unicharToAnsi(diskOpEntry[fileIndex].ansiName, diskOpEntry[fileIndex].name, fileNameLength);
+
 #ifdef _WIN32
             diskOpEntry[fileIndex].size = ent->d_size;
 
@@ -496,8 +552,8 @@ static int8_t diskOpFillBufferMod(void)
         }
         else
         {
-            diskOpEntry[fileIndex].filename = (char *)(malloc(1 + fileNameLength + 1));
-            if (diskOpEntry[fileIndex].filename == NULL)
+            diskOpEntry[fileIndex].ansiName = (char *)(calloc(fileNameLength + 10, sizeof (char)));
+            if (diskOpEntry[fileIndex].ansiName == NULL)
             {
                 closedir(dir);
                 freeDiskOpFileMem();
@@ -508,14 +564,14 @@ static int8_t diskOpFillBufferMod(void)
                 return (false);
             }
 
-            diskOpEntry[fileIndex].filename[0] = 2; // normal dir sort priority
+            unicharToAnsi(diskOpEntry[fileIndex].ansiName + 1, diskOpEntry[fileIndex].name, fileNameLength);
+
+            diskOpEntry[fileIndex].ansiName[0] = 2; // normal dir sort priority
             if (fileNameLength == 2)
             {
-                if ((ent->d_name[0] == '.') && (ent->d_name[1] == '.'))
-                    diskOpEntry[fileIndex].filename[0] = 1; // sort ".." folder first by adding a dummy sort char
+                if ((diskOpEntry[fileIndex].ansiName[1] == '.') && (diskOpEntry[fileIndex].ansiName[2] == '.'))
+                    diskOpEntry[fileIndex].ansiName[0] = 1; // sort ".." folder first by adding a dummy sort char
             }
-
-            strcpy(diskOpEntry[fileIndex].filename + 1, ent->d_name);
         }
 
         fileIndex++;
@@ -551,10 +607,10 @@ static int8_t diskOpFillBufferSmp(void)
     editor.diskop.scrollOffset = 0;
 
     // do we have a path set?
-    if (editor.currPath[0] == '\0')
+    if (editor.currPathU[0] == '\0')
         setVisualPathToCwd();
 
-    dir = opendir(editor.currPath);
+    dir = opendir(editor.currPathU);
     if (dir == NULL)
     {
         setVisualPathToCwd();
@@ -589,9 +645,17 @@ static int8_t diskOpFillBufferSmp(void)
         if (ent->d_name[0] == '\0')
             continue;
 
+#ifndef _WIN32
+        // don't handle "dot" files/dirs
+        if ((ent->d_name[0] == '.') && (ent->d_name[1] != '.'))
+            continue;
+#endif
+
         // don't count "." directory (not read lateron)
-        if (!((ent->d_type == DT_DIR) && ((ent->d_name[0] == '.') && (ent->d_name[1] == '\0'))))
-            editor.diskop.numFiles++;
+        if ((ent->d_type == DT_DIR) && ((ent->d_name[0] == '.') && (ent->d_name[1] == '\0')))
+            continue;
+
+        editor.diskop.numFiles++;
     }
 
     closedir(dir);
@@ -603,7 +667,7 @@ static int8_t diskOpFillBufferSmp(void)
     if (!editor.errorMsgActive)
         pointerSetMode(POINTER_MODE_READ_DIR, NO_CARRY);
 
-    dir = opendir(editor.currPath); // we opened this earlier, we know it works
+    dir = opendir(editor.currPathU); // we opened this earlier, we know it works
 
     // fill disk op. buffer (type, size, path, file name, date changed)
 
@@ -623,16 +687,22 @@ static int8_t diskOpFillBufferSmp(void)
         if (ent->d_name[0] == '\0')
             continue;
 
+#ifndef _WIN32
+        // don't handle "dot" files/dirs
+        if ((ent->d_name[0] == '.') && (ent->d_name[1] != '.'))
+            continue;
+#endif
+
         // don't handle "." directory
         if ((ent->d_type == DT_DIR) && ((ent->d_name[0] == '.') && (ent->d_name[1] == '\0')))
             continue;
 
         diskOpEntry[fileIndex].type = (ent->d_type == DT_REG) ? DISKOP_FILE : DISKOP_DIR;
 
-        fileNameLength = strlen(ent->d_name);
+        fileNameLength = UNICHAR_STRLEN(ent->d_name);
 
-        diskOpEntry[fileIndex].filename = (char *)(malloc(fileNameLength + 1));
-        if (diskOpEntry[fileIndex].filename == NULL)
+        diskOpEntry[fileIndex].name = (UNICHAR *)(malloc((fileNameLength + 2) * sizeof (UNICHAR)));
+        if (diskOpEntry[fileIndex].name == NULL)
         {
             closedir(dir);
             freeDiskOpFileMem();
@@ -643,11 +713,25 @@ static int8_t diskOpFillBufferSmp(void)
             return (false);
         }
 
-        strcpy(diskOpEntry[fileIndex].filename, ent->d_name);
+        UNICHAR_STRCPY(diskOpEntry[fileIndex].name, ent->d_name);
 
         // get file size and modification date
         if (diskOpEntry[fileIndex].type == DISKOP_FILE)
         {
+            diskOpEntry[fileIndex].ansiName = (char *)(calloc(fileNameLength + 10, sizeof (char)));
+            if (diskOpEntry[fileIndex].ansiName == NULL)
+            {
+                closedir(dir);
+                freeDiskOpFileMem();
+
+                displayErrorMsg(editor.outOfMemoryText);
+                terminalPrintf(editor.diskOpListOoMText);
+
+                return (false);
+            }
+
+            unicharToAnsi(diskOpEntry[fileIndex].ansiName, diskOpEntry[fileIndex].name, fileNameLength);
+
 #ifdef _WIN32
             diskOpEntry[fileIndex].size = ent->d_size;
 
@@ -686,8 +770,8 @@ static int8_t diskOpFillBufferSmp(void)
         }
         else
         {
-            diskOpEntry[fileIndex].filename = (char *)(malloc(1 + fileNameLength + 1));
-            if (diskOpEntry[fileIndex].filename == NULL)
+            diskOpEntry[fileIndex].ansiName = (char *)(calloc(fileNameLength + 10, sizeof (char)));
+            if (diskOpEntry[fileIndex].ansiName == NULL)
             {
                 closedir(dir);
                 freeDiskOpFileMem();
@@ -698,14 +782,14 @@ static int8_t diskOpFillBufferSmp(void)
                 return (false);
             }
 
-            diskOpEntry[fileIndex].filename[0] = 2; // normal dir sort priority
+            unicharToAnsi(diskOpEntry[fileIndex].ansiName + 1, diskOpEntry[fileIndex].name, fileNameLength);
+
+            diskOpEntry[fileIndex].ansiName[0] = 2; // normal dir sort priority
             if (fileNameLength == 2)
             {
-                if ((ent->d_name[0] == '.') && (ent->d_name[1] == '.'))
-                    diskOpEntry[fileIndex].filename[0] = 1; // sort ".." folder first by adding a dummy sort char
+                if ((diskOpEntry[fileIndex].ansiName[1] == '.') && (diskOpEntry[fileIndex].ansiName[2] == '.'))
+                    diskOpEntry[fileIndex].ansiName[0] = 1; // sort ".." folder first by adding a dummy sort char
             }
-
-            strcpy(diskOpEntry[fileIndex].filename + 1, ent->d_name);
         }
 
         fileIndex++;
@@ -746,8 +830,9 @@ void diskOpRenderFileList(uint32_t *frameBuffer)
 {
     char tmpChar, tmpStr[7];
     uint8_t listYPos;
-    int32_t i, j;
-    uint32_t k, entryLength, fileSize;
+    int32_t i, j, k, entryLength;
+    uint32_t fileSize;
+    fileEntry_t *entry;
 
     if ((editor.ui.pointerMode != POINTER_MODE_READ_DIR) && (editor.ui.pointerMode != POINTER_MODE_MSG1))
     {
@@ -768,11 +853,14 @@ void diskOpRenderFileList(uint32_t *frameBuffer)
     {
         editor.diskop.fillThread = SDL_CreateThread(diskOpFillThreadFunc, "ProTracker disk op fill thread", NULL);
         editor.diskop.cached = true;
+        return;
     }
 
     // print filelist
     if (!editor.diskop.isFilling && (diskOpEntry != NULL))
     {
+        entry = diskOpEntry;
+
         // clear filelist
         for (i = 0; i < DISKOP_LIST_SIZE; ++i)
         {
@@ -788,9 +876,9 @@ void diskOpRenderFileList(uint32_t *frameBuffer)
             {
                 listYPos = (uint8_t)(35 + (i * (FONT_CHAR_H + 1)));
 
-                if (diskOpEntry[j].filename == NULL)
+                if (entry[j].ansiName == NULL)
                 {
-                    if (diskOpEntry[j].type == DISKOP_FILE)
+                    if (entry[j].type == DISKOP_FILE)
                         textOut(frameBuffer, 64, listYPos, "<COULDN'T LIST FILE>", palette[PAL_QADSCP]);
                     else
                         textOut(frameBuffer, 64, listYPos, "<COULDN'T LIST DIR>", palette[PAL_QADSCP]);
@@ -798,9 +886,11 @@ void diskOpRenderFileList(uint32_t *frameBuffer)
                     continue;
                 }
 
-                entryLength = strlen(diskOpEntry[j].filename);
+                entryLength = strlen(entry[j].ansiName);
+                if (entryLength < 1)
+                    continue;
 
-                if (diskOpEntry[j].type == DISKOP_FILE)
+                if (entry[j].type == DISKOP_FILE)
                 {
                     // print file name
                     if (entryLength > 23)
@@ -808,7 +898,7 @@ void diskOpRenderFileList(uint32_t *frameBuffer)
                         // shorten file name and add ".." to end
                         for (k = 0; k < (23 - 2); ++k)
                         {
-                            tmpChar = diskOpEntry[j].filename[k];
+                            tmpChar = entry[j].ansiName[k];
                             if (((tmpChar < ' ') || (tmpChar > '~')) && (tmpChar != '\0'))
                                 tmpChar = ' '; // was illegal character
 
@@ -822,7 +912,7 @@ void diskOpRenderFileList(uint32_t *frameBuffer)
                         // print whole file name
                         for (k = 0; k < entryLength; ++k)
                         {
-                            tmpChar = diskOpEntry[j].filename[k];
+                            tmpChar = entry[j].ansiName[k];
                             if (((tmpChar < ' ') || (tmpChar > '~')) && (tmpChar != '\0'))
                                 tmpChar = ' '; // was illegal character
 
@@ -831,13 +921,13 @@ void diskOpRenderFileList(uint32_t *frameBuffer)
                     }
 
                     // print modification date
-                    if (diskOpEntry[j].dateChanged != NULL)
-                        textOut(frameBuffer, 8, listYPos, diskOpEntry[j].dateChanged, palette[PAL_QADSCP]);
+                    if (entry[j].dateChanged != NULL)
+                        textOut(frameBuffer, 8, listYPos, entry[j].dateChanged, palette[PAL_QADSCP]);
                     else
                         textOut(frameBuffer, 8, listYPos, "000000", palette[PAL_QADSCP]);
 
                     // print file size (can be optimized/cleansed further...)
-                    fileSize = diskOpEntry[j].size;
+                    fileSize = entry[j].size;
                     if (fileSize == 0)
                     {
                         textOut(frameBuffer, 256, listYPos, "     0", palette[PAL_QADSCP]);
@@ -903,13 +993,15 @@ void diskOpRenderFileList(uint32_t *frameBuffer)
                 }
                 else
                 {
+                
                     // print folder
-                    entryLength--; // skip / character used for dir sorting
+                    entryLength--; // skip character used for dir sorting
+
                     if (entryLength > 24)
                     {
                         for (k = 0; k < (24 - 2); ++k)
                         {
-                            tmpChar = diskOpEntry[j].filename[1 + k];
+                            tmpChar = entry[j].ansiName[1 + k];
                             if (((tmpChar < ' ') || (tmpChar > '~')) && (tmpChar != '\0'))
                                 tmpChar = ' '; // was illegal character
 
@@ -918,12 +1010,12 @@ void diskOpRenderFileList(uint32_t *frameBuffer)
 
                         textOut(frameBuffer, 64 + ((24 - 2) * FONT_CHAR_W), listYPos, "..", palette[PAL_QADSCP]);
                     }
-                    else
+                    else if (entryLength > 0)
                     {
                         // print whole folder name
                         for (k = 0; k < entryLength; ++k)
                         {
-                            tmpChar = diskOpEntry[j].filename[1 + k];
+                            tmpChar = entry[j].ansiName[1 + k];
                             if (((tmpChar < ' ') || (tmpChar > '~')) && (tmpChar != '\0'))
                                 tmpChar = ' '; // was illegal character
 
@@ -932,6 +1024,7 @@ void diskOpRenderFileList(uint32_t *frameBuffer)
                     }
 
                     textOut(frameBuffer, 264, listYPos, "(DIR)", palette[PAL_QADSCP]);
+                 
                 }
             }
         }

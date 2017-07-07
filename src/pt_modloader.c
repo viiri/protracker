@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <ctype.h> // for toupper()/tolower()
+#include <ctype.h> // tolower()
 #ifdef _WIN32
 #include <io.h>
 #else
@@ -19,6 +19,7 @@
 #include "pt_helpers.h"
 #include "pt_terminal.h"
 #include "pt_visuals.h"
+#include "pt_unicode.h"
 
 typedef struct mem_t
 {
@@ -244,7 +245,7 @@ static int8_t checkModType(const char *buf)
     return (FORMAT_UNKNOWN); // may be The Ultimate SoundTracker, 15 samples
 }
 
-module_t *modLoad(const char *fileName)
+module_t *modLoad(UNICHAR *fileName)
 {
     char modSig[4], tmpChar;
     int8_t mightBeSTK, numSamples, lateVerSTKFlag;
@@ -270,7 +271,7 @@ module_t *modLoad(const char *fileName)
         return (NULL);
     }
 
-    fmodule = fopen(fileName, "rb");
+    fmodule = UNICHAR_FOPEN(fileName, "rb");
     if (fmodule == NULL)
     {
         free(newModule);

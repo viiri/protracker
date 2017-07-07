@@ -392,9 +392,8 @@ void keyUpHandler(SDL_Scancode keyEntry)
 
 void handleTerminalKeys(SDL_Scancode keyEntry);
 
-void keyDownHandler(SDL_Scancode keyEntry)
+void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
 {
-    char keyEntryTranslated;
     int8_t chTmp;
     uint8_t blockFrom, blockTo;
     int16_t i, j;
@@ -448,10 +447,9 @@ void keyDownHandler(SDL_Scancode keyEntry)
     // ENTRY JUMPING IN DISK OP. FILELIST
     if (editor.ui.diskOpScreenShown && input.keyb.shiftKeyDown && !editor.ui.editTextFlag)
     {
-        keyEntryTranslated = (char)(scanCodeToUSKey(keyEntry));
-        if ((keyEntryTranslated >= 32) && (keyEntryTranslated <= 126))
+        if ((keyCode >= 32) && (keyCode <= 126))
         {
-            handleEntryJumping(keyEntryTranslated);
+            handleEntryJumping(keyCode);
             return;
         }
     }
@@ -3582,7 +3580,7 @@ void handleKeyRepeat(SDL_Scancode keyEntry)
                 if (input.keyb.repeatCounter >= 3)
                 {
                     input.keyb.repeatCounter = 0;
-                    keyDownHandler(keyEntry);
+                    keyDownHandler(keyEntry, 0);
                 }
             }
         }
@@ -3595,7 +3593,7 @@ void handleKeyRepeat(SDL_Scancode keyEntry)
             if (input.keyb.repeatCounter >= 3)
             {
                 input.keyb.repeatCounter = 0;
-                keyDownHandler(keyEntry);
+                keyDownHandler(keyEntry, 0);
             }
         }
         break;
@@ -4091,7 +4089,7 @@ void handleTextEditInputChar(char textChar)
 
     // a..z -> A..Z
     if ((textChar >= 'a') && (textChar <= 'z'))
-        textChar = (int8_t)(toupper(textChar));
+        textChar = toupper(textChar);
 
     if (editor.ui.editTextType == TEXT_EDIT_STRING)
     {
@@ -4252,12 +4250,11 @@ void handleTextEditInputChar(char textChar)
 
 int8_t handleTextEditMode(SDL_Scancode keyEntry)
 {
-    char *readTmp, keyCode;
+    char *readTmp;
     int8_t readTmpNext;
     int16_t i, j;
     note_t *noteSrc;
 
-    keyCode = scanCodeToUSKey(keyEntry);
     switch (keyEntry)
     {
         case SDL_SCANCODE_ESCAPE:
@@ -4392,7 +4389,11 @@ int8_t handleTextEditMode(SDL_Scancode keyEntry)
             {
                 if (editor.ui.diskOpScreenShown)
                 {
+#ifdef _WIN32
+                    diskOpSetPath(L"..", DISKOP_CACHE);
+#else
                     diskOpSetPath("..", DISKOP_CACHE);
+#endif
                 }
                 else if (input.keyb.shiftKeyDown || input.keyb.leftAltKeyDown || input.keyb.leftCtrlKeyDown)
                 {
