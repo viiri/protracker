@@ -777,7 +777,7 @@ void handleEditKeys(SDL_Scancode keyEntry, int8_t normalMode)
                     note->period = 0;
                 }
 
-                if (input.keyb.leftShiftKeyDown || input.keyb.leftAltKeyDown)
+                if (input.keyb.shiftKeyDown || input.keyb.leftAltKeyDown)
                 {
                     note->command = 0;
                     note->param   = 0;

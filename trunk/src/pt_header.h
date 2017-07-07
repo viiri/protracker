@@ -277,7 +277,7 @@ struct input_t
     struct keyb_t
     {
         int8_t repeatKey, delayKey;
-        uint8_t leftShiftKeyDown, leftCtrlKeyDown, leftAltKeyDown;
+        uint8_t shiftKeyDown, leftCtrlKeyDown, leftAltKeyDown;
         uint8_t leftAmigaKeyDown, keypadEnterKeyDown, rightShiftKeyDown;
         uint8_t repeatCounter, delayCounter;
         SDL_Scancode lastRepKey, lastKey;

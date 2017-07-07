@@ -73,7 +73,7 @@ void updateKeyModifiers(void)
 
     input.keyb.leftCtrlKeyDown   = (modState & KMOD_LCTRL)  ? true : false;
     input.keyb.leftAltKeyDown    = (modState & KMOD_LALT)   ? true : false;
-    input.keyb.leftShiftKeyDown  = (modState & KMOD_LSHIFT) ? true : false;
+    input.keyb.shiftKeyDown      = (modState & (KMOD_LSHIFT | KMOD_RSHIFT)) ? true : false;
     input.keyb.rightShiftKeyDown = (modState & KMOD_RSHIFT) ? true : false;
 
 #ifndef _WIN32 // MS Windows: handled in lowLevelKeyboardProc
@@ -446,7 +446,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
     }
 
     // ENTRY JUMPING IN DISK OP. FILELIST
-    if (editor.ui.diskOpScreenShown && input.keyb.leftShiftKeyDown && !editor.ui.editTextFlag)
+    if (editor.ui.diskOpScreenShown && input.keyb.shiftKeyDown && !editor.ui.editTextFlag)
     {
         keyEntryTranslated = (char)(scanCodeToUSKey(keyEntry));
         if ((keyEntryTranslated >= 32) && (keyEntryTranslated <= 126))
@@ -488,7 +488,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
         {
             if (editor.autoInsFlag)
             {
-                if (input.keyb.leftShiftKeyDown)
+                if (input.keyb.shiftKeyDown)
                     editor.autoInsSlot -= 4;
                 else
                     editor.autoInsSlot--;
@@ -515,7 +515,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
             {
                 if (editor.autoInsFlag)
                 {
-                    if (input.keyb.leftShiftKeyDown)
+                    if (input.keyb.shiftKeyDown)
                         editor.autoInsSlot += 4;
                     else
                         editor.autoInsSlot++;
@@ -787,7 +787,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
 
                 editor.ui.updateSongTiming = true;
             }
-            else if (input.keyb.leftShiftKeyDown)
+            else if (input.keyb.shiftKeyDown)
             {
                 toggleAmigaPanMode();
             }
@@ -810,7 +810,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
             }
             else
             {
-                if (input.keyb.leftShiftKeyDown || input.keyb.leftAltKeyDown || input.keyb.leftCtrlKeyDown)
+                if (input.keyb.shiftKeyDown || input.keyb.leftAltKeyDown || input.keyb.leftCtrlKeyDown)
                 {
                     saveUndo();
 
@@ -933,7 +933,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
             }
             else
             {
-                if (input.keyb.leftShiftKeyDown)
+                if (input.keyb.shiftKeyDown)
                 {
                     // cut channel and put in buffer
                     saveUndo();
@@ -995,7 +995,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
             }
             else
             {
-                if (input.keyb.leftShiftKeyDown)
+                if (input.keyb.shiftKeyDown)
                 {
                     // copy channel to buffer
 
@@ -1035,7 +1035,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
             }
             else
             {
-                if (input.keyb.leftShiftKeyDown)
+                if (input.keyb.shiftKeyDown)
                 {
                     // paste channel buffer to channel
                     saveUndo();
@@ -1083,7 +1083,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
 
         case SDL_SCANCODE_F6:
         {
-            if (input.keyb.leftShiftKeyDown)
+            if (input.keyb.shiftKeyDown)
             {
                 editor.f6Pos = modEntry->currRow;
 
@@ -1135,7 +1135,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
 
         case SDL_SCANCODE_F7:
         {
-            if (input.keyb.leftShiftKeyDown)
+            if (input.keyb.shiftKeyDown)
             {
                 editor.f7Pos = modEntry->currRow;
 
@@ -1187,7 +1187,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
 
         case SDL_SCANCODE_F8:
         {
-            if (input.keyb.leftShiftKeyDown)
+            if (input.keyb.shiftKeyDown)
             {
                 editor.f8Pos = modEntry->currRow;
 
@@ -1239,7 +1239,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
 
         case SDL_SCANCODE_F9:
         {
-            if (input.keyb.leftShiftKeyDown)
+            if (input.keyb.shiftKeyDown)
             {
                 editor.f9Pos = modEntry->currRow;
 
@@ -1291,7 +1291,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
 
         case SDL_SCANCODE_F10:
         {
-            if (input.keyb.leftShiftKeyDown)
+            if (input.keyb.shiftKeyDown)
             {
                 editor.f10Pos = modEntry->currRow;
 
@@ -1356,7 +1356,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
 
         case SDL_SCANCODE_TAB:
         {
-            if (input.keyb.leftShiftKeyDown)
+            if (input.keyb.shiftKeyDown)
                 movePatCurPrevCh();
             else
                 movePatCurNextCh();
@@ -1376,7 +1376,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                 setStatusMessage("EDITSKIP = 0", NO_CARRY);
                 editor.ui.updateTrackerFlags = true;
             }
-            else if (input.keyb.leftShiftKeyDown)
+            else if (input.keyb.shiftKeyDown)
             {
                 noteSrc = &modEntry->patterns[modEntry->currPattern][(modEntry->currRow * AMIGA_VOICES) + editor.cursor.channel];
                 editor.effectMacros[9] = (noteSrc->command << 8) | noteSrc->param;
@@ -1407,7 +1407,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                 setStatusMessage("EDITSKIP = 1", NO_CARRY);
                 editor.ui.updateTrackerFlags = true;
             }
-            else if (input.keyb.leftShiftKeyDown)
+            else if (input.keyb.shiftKeyDown)
             {
                 noteSrc = &modEntry->patterns[modEntry->currPattern][(modEntry->currRow * AMIGA_VOICES) + editor.cursor.channel];
                 editor.effectMacros[0] = (noteSrc->command << 8) | noteSrc->param;
@@ -1438,7 +1438,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                 setStatusMessage("EDITSKIP = 2", NO_CARRY);
                 editor.ui.updateTrackerFlags = true;
             }
-            else if (input.keyb.leftShiftKeyDown)
+            else if (input.keyb.shiftKeyDown)
             {
                 noteSrc = &modEntry->patterns[modEntry->currPattern][(modEntry->currRow * AMIGA_VOICES) + editor.cursor.channel];
                 editor.effectMacros[1] = (noteSrc->command << 8) | noteSrc->param;
@@ -1469,7 +1469,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                 setStatusMessage("EDITSKIP = 3", NO_CARRY);
                 editor.ui.updateTrackerFlags = true;
             }
-            else if (input.keyb.leftShiftKeyDown)
+            else if (input.keyb.shiftKeyDown)
             {
                 noteSrc = &modEntry->patterns[modEntry->currPattern][(modEntry->currRow * AMIGA_VOICES) + editor.cursor.channel];
                 editor.effectMacros[2] = (noteSrc->command << 8) | noteSrc->param;
@@ -1500,7 +1500,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                 setStatusMessage("EDITSKIP = 4", NO_CARRY);
                 editor.ui.updateTrackerFlags = true;
             }
-            else if (input.keyb.leftShiftKeyDown)
+            else if (input.keyb.shiftKeyDown)
             {
                 noteSrc = &modEntry->patterns[modEntry->currPattern][(modEntry->currRow * AMIGA_VOICES) + editor.cursor.channel];
                 editor.effectMacros[3] = (noteSrc->command << 8) | noteSrc->param;
@@ -1527,7 +1527,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                 setStatusMessage("EDITSKIP = 5", NO_CARRY);
                 editor.ui.updateTrackerFlags = true;
             }
-            else if (input.keyb.leftShiftKeyDown)
+            else if (input.keyb.shiftKeyDown)
             {
                 noteSrc = &modEntry->patterns[modEntry->currPattern][(modEntry->currRow * AMIGA_VOICES) + editor.cursor.channel];
                 editor.effectMacros[4] = (noteSrc->command << 8) | noteSrc->param;
@@ -1554,7 +1554,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                 setStatusMessage("EDITSKIP = 6", NO_CARRY);
                 editor.ui.updateTrackerFlags = true;
             }
-            else if (input.keyb.leftShiftKeyDown)
+            else if (input.keyb.shiftKeyDown)
             {
                 noteSrc = &modEntry->patterns[modEntry->currPattern][(modEntry->currRow * AMIGA_VOICES) + editor.cursor.channel];
                 editor.effectMacros[5] = (noteSrc->command << 8) | noteSrc->param;
@@ -1581,7 +1581,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                 setStatusMessage("EDITSKIP = 7", NO_CARRY);
                 editor.ui.updateTrackerFlags = true;
             }
-            else if (input.keyb.leftShiftKeyDown)
+            else if (input.keyb.shiftKeyDown)
             {
                 noteSrc = &modEntry->patterns[modEntry->currPattern][(modEntry->currRow * AMIGA_VOICES) + editor.cursor.channel];
                 editor.effectMacros[6] = (noteSrc->command << 8) | noteSrc->param;
@@ -1608,7 +1608,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                 setStatusMessage("EDITSKIP = 8", NO_CARRY);
                 editor.ui.updateTrackerFlags = true;
             }
-            else if (input.keyb.leftShiftKeyDown)
+            else if (input.keyb.shiftKeyDown)
             {
                 noteSrc = &modEntry->patterns[modEntry->currPattern][(modEntry->currRow * AMIGA_VOICES) + editor.cursor.channel];
                 editor.effectMacros[7] = (noteSrc->command << 8) | noteSrc->param;
@@ -1632,7 +1632,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                 editor.errorMsgBlock   = false;
                 editor.errorMsgCounter = 32; // short flash
             }
-            else if (input.keyb.leftShiftKeyDown)
+            else if (input.keyb.shiftKeyDown)
             {
                 noteSrc = &modEntry->patterns[modEntry->currPattern][(modEntry->currRow * AMIGA_VOICES) + editor.cursor.channel];
                 editor.effectMacros[8] = (noteSrc->command << 8) | noteSrc->param;
@@ -2123,7 +2123,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                     input.keyb.repeatKey = true;
                 }
             }
-            else if (input.keyb.leftShiftKeyDown)
+            else if (input.keyb.shiftKeyDown)
             {
                 if (modEntry->currOrder > 0)
                 {
@@ -2169,7 +2169,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                     input.keyb.repeatKey = true;
                 }
             }
-            else if (input.keyb.leftShiftKeyDown)
+            else if (input.keyb.shiftKeyDown)
             {
                 if (modEntry->currOrder < 126)
                 {
@@ -2214,7 +2214,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                 }
                 else
                 {
-                    if (input.keyb.leftShiftKeyDown)
+                    if (input.keyb.shiftKeyDown)
                     {
                         editor.muted[0] = true;
                         editor.muted[1] = true;
@@ -2536,7 +2536,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                         = editor.blockBuffer[editor.buffFromPos + i];
                 }
 
-                if (!input.keyb.leftShiftKeyDown)
+                if (!input.keyb.shiftKeyDown)
                 {
                     modEntry->currRow += (i & 0xFF);
                     if (modEntry->currRow > 63)
@@ -2591,7 +2591,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                     noteSrc++;
                 }
 
-                if (!input.keyb.leftShiftKeyDown)
+                if (!input.keyb.shiftKeyDown)
                 {
                     modEntry->currRow += (i & 0xFF);
                     if (modEntry->currRow > 63)
@@ -2633,7 +2633,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                 saveUndo();
 
                 i = modEntry->currRow;
-                if (input.keyb.leftShiftKeyDown)
+                if (input.keyb.shiftKeyDown)
                 {
                     // kill to start
                     while (i >= 0)
@@ -2699,7 +2699,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
             }
             else if (input.keyb.leftAltKeyDown)
             {
-                if (input.keyb.leftShiftKeyDown)
+                if (input.keyb.shiftKeyDown)
                     editor.metroChannel = editor.cursor.channel + 1;
                 else
                     editor.metroFlag ^= 1;
@@ -2784,7 +2784,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                         = editor.blockBuffer[editor.buffFromPos + i];
                 }
 
-                if (!input.keyb.leftShiftKeyDown)
+                if (!input.keyb.shiftKeyDown)
                 {
                     modEntry->currRow += (i & 0xFF);
                     if (modEntry->currRow > 63)
@@ -2992,7 +2992,7 @@ void keyDownHandler(SDL_Scancode keyEntry)
                     chTmp = (chTmp + 1) & 3;
                 }
 
-                if (!input.keyb.leftShiftKeyDown)
+                if (!input.keyb.shiftKeyDown)
                 {
                     modEntry->currRow += (i & 0xFF);
                     if (modEntry->currRow > 63)
@@ -3365,7 +3365,7 @@ void handleKeyRepeat(SDL_Scancode keyEntry)
                         sampleDownButton();
                     }
                 }
-                else if (input.keyb.leftShiftKeyDown)
+                else if (input.keyb.shiftKeyDown)
                 {
                     if (input.keyb.repeatCounter >= 5)
                     {
@@ -3389,7 +3389,7 @@ void handleKeyRepeat(SDL_Scancode keyEntry)
                     {
                         input.keyb.repeatCounter = 0;
 
-                        if (!input.keyb.leftShiftKeyDown && !input.keyb.leftAltKeyDown && !input.keyb.leftCtrlKeyDown)
+                        if (!input.keyb.shiftKeyDown && !input.keyb.leftAltKeyDown && !input.keyb.leftCtrlKeyDown)
                             movePatCurLeft();
                     }
                 }
@@ -3417,7 +3417,7 @@ void handleKeyRepeat(SDL_Scancode keyEntry)
                         sampleUpButton();
                     }
                 }
-                else if (input.keyb.leftShiftKeyDown)
+                else if (input.keyb.shiftKeyDown)
                 {
                     if (input.keyb.repeatCounter >= 5)
                     {
@@ -3441,7 +3441,7 @@ void handleKeyRepeat(SDL_Scancode keyEntry)
                     {
                         input.keyb.repeatCounter = 0;
 
-                        if (!input.keyb.leftShiftKeyDown && !input.keyb.leftAltKeyDown && !input.keyb.leftCtrlKeyDown)
+                        if (!input.keyb.shiftKeyDown && !input.keyb.leftAltKeyDown && !input.keyb.leftCtrlKeyDown)
                             movePatCurRight();
                     }
                 }
@@ -3496,7 +3496,7 @@ void handleKeyRepeat(SDL_Scancode keyEntry)
                     repeatNum = 7;
 
                          if (input.keyb.leftAltKeyDown)   repeatNum = 1;
-                    else if (input.keyb.leftShiftKeyDown) repeatNum = 3;
+                    else if (input.keyb.shiftKeyDown) repeatNum = 3;
 
                     if (input.keyb.repeatCounter >= repeatNum)
                     {
@@ -3561,7 +3561,7 @@ void handleKeyRepeat(SDL_Scancode keyEntry)
                     repeatNum = 7;
 
                          if (input.keyb.leftAltKeyDown)   repeatNum = 1;
-                    else if (input.keyb.leftShiftKeyDown) repeatNum = 3;
+                    else if (input.keyb.shiftKeyDown) repeatNum = 3;
 
                     if (input.keyb.repeatCounter >= repeatNum)
                     {
@@ -4394,7 +4394,7 @@ int8_t handleTextEditMode(SDL_Scancode keyEntry)
                 {
                     diskOpSetPath("..", DISKOP_CACHE);
                 }
-                else if (input.keyb.leftShiftKeyDown || input.keyb.leftAltKeyDown || input.keyb.leftCtrlKeyDown)
+                else if (input.keyb.shiftKeyDown || input.keyb.leftAltKeyDown || input.keyb.leftCtrlKeyDown)
                 {
                     saveUndo();
 

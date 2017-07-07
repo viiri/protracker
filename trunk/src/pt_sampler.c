@@ -1418,7 +1418,7 @@ void sampleMarkerToBeg(void)
 {
     invertRange();
 
-    if (input.keyb.leftShiftKeyDown && (editor.markEndOfs > 0))
+    if (input.keyb.shiftKeyDown && (editor.markEndOfs > 0))
     {
         editor.markStartOfs = editor.sampler.samOffset;
     }
@@ -1442,7 +1442,7 @@ void sampleMarkerToCenter(void)
 
     invertRange();
 
-    if (input.keyb.leftShiftKeyDown && (editor.markEndOfs > 0))
+    if (input.keyb.shiftKeyDown && (editor.markEndOfs > 0))
     {
              if (editor.markStartOfs < middlePos) editor.markEndOfs   = middlePos;
         else if (editor.markEndOfs   > middlePos) editor.markStartOfs = middlePos;
@@ -1467,7 +1467,7 @@ void sampleMarkerToEnd(void)
 
     invertRange();
 
-    if (input.keyb.leftShiftKeyDown && (editor.markEndOfs > 0))
+    if (input.keyb.shiftKeyDown && (editor.markEndOfs > 0))
     {
         editor.markEndOfs = endPos;
     }
@@ -2377,7 +2377,7 @@ void samplerEditSample(int8_t mouseButtonHeld)
     x = scr2SmpPos(input.mouse.x - 3);
     x = CLAMP(x, 0, s->length);
 
-    if (!input.keyb.leftShiftKeyDown)
+    if (!input.keyb.shiftKeyDown)
         y = (int8_t)(CLAMP(-(input.mouse.y - 169) * 4, -128, 127));
     else
         y = (int8_t)(CLAMP(-(editor.sampler.lastMouseY - 169) * 4, -128, 127));
@@ -2436,7 +2436,7 @@ void samplerEditSample(int8_t mouseButtonHeld)
 
         editor.sampler.lastMouseX = input.mouse.x;
 
-        if (!input.keyb.leftShiftKeyDown)
+        if (!input.keyb.shiftKeyDown)
             editor.sampler.lastMouseY = input.mouse.y;
     }
 
