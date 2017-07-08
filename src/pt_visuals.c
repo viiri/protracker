@@ -3226,7 +3226,7 @@ int8_t setupVideo(void)
     screenW = SCREEN_W * editor.ui.videoScaleFactor;
     screenH = SCREEN_H * editor.ui.videoScaleFactor;
 
-    windowFlags   = 0;
+    windowFlags   = SDL_WINDOW_MOUSE_FOCUS | SDL_WINDOW_INPUT_FOCUS;
     rendererFlags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE;
     textureFormat = SDL_PIXELFORMAT_RGB888;
 
@@ -3242,6 +3242,10 @@ int8_t setupVideo(void)
 
 #if SDL_PATCHLEVEL >= 1
     SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "1");
+#endif
+
+#if SDL_PATCHLEVEL >= 5
+    SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
 #endif
 
     if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0)
