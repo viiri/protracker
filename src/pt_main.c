@@ -326,6 +326,7 @@ static void handleInput(void)
         }
         else if (inputEvent.type == SDL_DROPFILE)
         {
+            SDL_RaiseWindow(window); // set window focus
             loadDroppedFile(inputEvent.drop.file, strlen(inputEvent.drop.file));
             SDL_free(inputEvent.drop.file);
         }
