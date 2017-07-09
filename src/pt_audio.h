@@ -39,5 +39,6 @@ void mixerKillAllVoices(void);
 void mixerKillVoiceIfReadingSample(uint8_t sample);
 void mixerCalcVoicePans(uint8_t stereoSeparation);
 void mixerSetSamplesPerTick(int32_t val);
+void mixerClearSampleCounter(void);
 
 #endif

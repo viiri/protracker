@@ -982,6 +982,11 @@ void mixerSetSamplesPerTick(int32_t val)
     samplesPerTick = val;
 }
 
+void mixerClearSampleCounter(void)
+{
+    sampleCounter = 0;
+}
+
 void toggleAmigaPanMode(void)
 {
     amigaPanFlag ^= 1;
