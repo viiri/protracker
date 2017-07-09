@@ -1595,6 +1595,8 @@ void modPlay(int16_t patt, int16_t order, int8_t row)
         editor.ui.updateSongPattern  = true;
         editor.ui.updateCurrPattText = true;
     }
+
+    mixerClearSampleCounter();
 }
 
 void clearSong(void)
