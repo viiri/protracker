@@ -2081,7 +2081,7 @@ void setLoopSprites(void)
         if (editor.sampler.samDisplay > 0)
         {
             editor.sampler.loopStartPos = smpPos2Scr(s->loopStart);
-            if ((editor.sampler.loopStartPos >= 0) && (editor.sampler.loopStartPos < SAMPLE_AREA_WIDTH))
+            if ((editor.sampler.loopStartPos >= 0) && (editor.sampler.loopStartPos <= SAMPLE_AREA_WIDTH))
                 setSpritePos(SPRITE_LOOP_PIN_LEFT, editor.sampler.loopStartPos, 138);
             else
                 hideSprite(SPRITE_LOOP_PIN_LEFT);
@@ -2496,8 +2496,6 @@ void samplerSamplePressed(int8_t mouseButtonHeld)
             s = &modEntry->samples[editor.currSample];
 
             mouseX += 2;
-            if (mouseX > SAMPLE_AREA_WIDTH)
-                mouseX = SAMPLE_AREA_WIDTH;
 
             tmpPos = (x_to_loopX(mouseX) - s->loopStart) & 0xFFFFFFFE;
             if ((s->loopStart + tmpPos) >= ((s->loopStart + s->loopLength) - 2))
@@ -2533,7 +2531,9 @@ void samplerSamplePressed(int8_t mouseButtonHeld)
 
             s = &modEntry->samples[editor.currSample];
 
-            mouseX = CLAMP(mouseX - 1, 0, SAMPLE_AREA_WIDTH + 3);
+            if (--mouseX < 0)
+                  mouseX = 0;
+
             s->loopLength = (x_to_loopX(mouseX) - s->loopStart) & 0xFFFFFFFE;
             if (s->loopLength < 2)
                 s->loopLength = 2;

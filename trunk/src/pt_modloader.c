@@ -503,7 +503,7 @@ module_t *modLoad(UNICHAR *fileName)
             // some modules are broken like this, and the loop should be disabled
             if ((s->loopStart + s->loopLength) > s->length)
             {
-                s->loopStart = 0;
+                s->loopStart  = 0;
                 s->loopLength = 2;
             }
         }
