@@ -479,7 +479,7 @@ module_t *modLoad(UNICHAR *fileName)
                 s->loopLength = 2;
 
             // fix for poorly converted STK->PTMOD modules.
-            if (!mightBeSTK && ((s->loopStart + s->loopLength) > s->length))
+            if (!mightBeSTK && (s->loopLength > 2) && ((s->loopStart + s->loopLength) > s->length))
             {
                 if (((s->loopStart / 2) + s->loopLength) <= s->length)
                     s->loopStart /= 2;
@@ -496,8 +496,15 @@ module_t *modLoad(UNICHAR *fileName)
                     s->tmpLoopStart = tmp;
                 }
 
-                // No finetune in STK/UST
+                // no finetune in STK/UST
                 s->fineTune = 0;
+            }
+
+            // some modules are broken like this, and the loop should be disabled
+            if ((s->loopStart + s->loopLength) > s->length)
+            {
+                s->loopStart = 0;
+                s->loopLength = 2;
             }
         }
     }
