@@ -788,6 +788,7 @@ static void loadDroppedFile(char *fullPath, uint32_t fullPathLen)
             setStatusMessage("ALL RIGHT", DO_CARRY);
             pointerSetMode(POINTER_MODE_IDLE, DO_CARRY);
 
+            editor.ui.diskOpScreenShown = false;
             displayMainScreen();
 
             if (editor.ui.samplerScreenShown)
