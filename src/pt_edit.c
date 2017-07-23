@@ -655,13 +655,16 @@ void handleEditKeys(SDL_Scancode keyEntry, int8_t normalMode)
 
     keyCode = scanCodeToUSKey(keyEntry);
 
-    if (editor.ui.samplerScreenShown || (editor.currMode == MODE_IDLE) || (editor.currMode == MODE_PLAY))
+    if (editor.ui.samplerScreenShown || ((editor.currMode == MODE_IDLE) || (editor.currMode == MODE_PLAY)))
     {
-        // it will only jam, not place it
-        jamAndPlaceSample(keyCode, normalMode);
+        // at this point it will only jam, not place it
+        if (!input.keyb.leftAltKeyDown && !input.keyb.leftAmigaKeyDown && !input.keyb.leftCtrlKeyDown && !input.keyb.shiftKeyDown)
+            jamAndPlaceSample(keyCode, normalMode);
+
         return;
     }
 
+    // handle modified (ALT/CTRL/SHIFT etc) keys for editing
     if ((editor.currMode == MODE_EDIT) || (editor.currMode == MODE_RECORD))
     {
         if (handleSpecialKeys(keyEntry))
@@ -672,6 +675,10 @@ void handleEditKeys(SDL_Scancode keyEntry, int8_t normalMode)
             return;
         }
     }
+
+    // if we held down any key modifier at this point, then do nothing
+    if (input.keyb.leftAltKeyDown || input.keyb.leftAmigaKeyDown || input.keyb.leftCtrlKeyDown || input.keyb.shiftKeyDown)
+        return;
 
     // are we editing a note, or other stuff?
     if (editor.cursor.mode != CURSOR_NOTE)

@@ -71,10 +71,9 @@ void updateKeyModifiers(void)
 
     modState = SDL_GetModState();
 
-    input.keyb.leftCtrlKeyDown   = (modState & KMOD_LCTRL)  ? true : false;
-    input.keyb.leftAltKeyDown    = (modState & KMOD_LALT)   ? true : false;
-    input.keyb.shiftKeyDown      = (modState & (KMOD_LSHIFT | KMOD_RSHIFT)) ? true : false;
-    input.keyb.rightShiftKeyDown = (modState & KMOD_RSHIFT) ? true : false;
+    input.keyb.leftCtrlKeyDown = (modState & KMOD_LCTRL)  ? true : false;
+    input.keyb.leftAltKeyDown  = (modState & KMOD_LALT)   ? true : false;
+    input.keyb.shiftKeyDown    = (modState & (KMOD_LSHIFT | KMOD_RSHIFT)) ? true : false;
 
 #ifndef _WIN32 // MS Windows: handled in lowLevelKeyboardProc
     input.keyb.leftAmigaKeyDown = (modState & KMOD_LGUI) ? true : false;
