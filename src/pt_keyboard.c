@@ -4345,6 +4345,10 @@ int8_t handleTextEditMode(SDL_Scancode keyEntry)
                     *readTmp++  = readTmpNext;
                 }
 
+                // hack to prevent cloning last character if the song/sample name has one character too much
+                if ((editor.ui.editObject == PTB_SONGNAME) || (editor.ui.editObject == PTB_SAMPLENAME))
+                     *editor.ui.textEndPtr = '\0';
+
                 if (!input.keyb.repeatKey)
                     input.keyb.delayCounter = 0;
 
@@ -4373,6 +4377,10 @@ int8_t handleTextEditMode(SDL_Scancode keyEntry)
                         readTmpNext = *(readTmp + 1);
                         *readTmp++  = readTmpNext;
                     }
+
+                    // hack to prevent cloning last character if the song/sample name has one character too much
+                    if ((editor.ui.editObject == PTB_SONGNAME) || (editor.ui.editObject == PTB_SAMPLENAME))
+                        *editor.ui.textEndPtr = '\0';
 
                     textMarkerMoveLeft();
                     updateTextObject(editor.ui.editObject);
