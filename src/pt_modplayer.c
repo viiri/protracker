@@ -19,7 +19,7 @@ extern int8_t forceMixerOff; // pt_audio.c
 
 static int8_t tempVolume, pattBreakFlag, pattDelayFlag, pattBreakBugPos;
 static int8_t forceEffectsOff, oldRow;
-static uint8_t tempFlags, pBreakFlag, posJumpAssert, pattDelayTime;
+static uint8_t tempFlags, pBreakFlag, posJumpAssert, pattDelayTime, setBPMFlag;
 static uint8_t pattDelayTime2, pBreakPosition, modHasBeenPlayed, oldSpeed;
 static int16_t modOrder, modPattern, oldPattern, oldOrder;
 static uint16_t tempPeriod, modBPM, oldBPM;
@@ -803,7 +803,7 @@ static void fxSetTempo(moduleChannel_t *ch)
         }
         else
         {
-            modSetTempo(ch->param);
+            setBPMFlag = ch->param; // CIA doesn't refresh its registers until the next interrupt, so change it later
         }
     }
 }
@@ -1160,8 +1160,17 @@ static void nextPosition(void)
 
 int8_t processTick(void)
 {
+    uint8_t i;
+
     if (!editor.songPlaying)
         return (false);
+
+    // PT quirk: CIA refreshes its timer values on the next interrupt, so do the real tempo change here
+    if (setBPMFlag != 0)
+    {
+        modSetTempo(setBPMFlag);
+        setBPMFlag = 0;
+    }
 
     if ((editor.isSMPRendering || editor.isWAVRendering) && modHasBeenPlayed)
     {
@@ -1193,10 +1202,8 @@ int8_t processTick(void)
         }
     }
 
-    processChannel(modEntry->channels + 0);
-    processChannel(modEntry->channels + 1);
-    processChannel(modEntry->channels + 2);
-    processChannel(modEntry->channels + 3);
+    for (i = 0; i < AMIGA_VOICES; ++i)
+        processChannel(&modEntry->channels[i]);
 
     // EEx + Dxx/Bxx quirk simulation
     if (editor.modTick == 0)
