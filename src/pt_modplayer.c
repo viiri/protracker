@@ -1,3 +1,6 @@
+// Very accurate C port of ProTracker 2.3D's replayer by 8bitbubsy, slightly modified.
+// Earlier versions of the PT clone used a completely different and less accurate replayer.
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,1076 +17,30 @@
 #include "pt_visuals.h"
 #include "pt_textout.h"
 #include "pt_terminal.h"
+#include "pt_scopes.h"
 
 extern int8_t forceMixerOff; // pt_audio.c
 
-static int8_t tempVolume, pattBreakFlag, pattDelayFlag, pattBreakBugPos;
-static int8_t forceEffectsOff, oldRow;
-static uint8_t tempFlags, pBreakFlag, posJumpAssert, pattDelayTime, setBPMFlag;
-static uint8_t pattDelayTime2, pBreakPosition, modHasBeenPlayed, oldSpeed;
-static int16_t modOrder, modPattern, oldPattern, oldOrder;
-static uint16_t tempPeriod, modBPM, oldBPM;
+static int8_t pBreakPosition, posJumpAssert, pBreakFlag, oldRow, modPattern;
+static uint8_t pattDelTime, setBPMFlag, updateUIPositions, lowMask = 0xFF;
+static uint8_t pattDelTime2, modHasBeenPlayed, oldSpeed;
+static int16_t modOrder, oldPattern, oldOrder;
+static uint16_t modBPM, oldBPM;
 
-// Normal effects
-static void fxArpeggio(moduleChannel_t *ch);
-static void fxPitchSlideUp(moduleChannel_t *ch);
-static void fxPitchSlideDown(moduleChannel_t *ch);
-static void fxGlissando(moduleChannel_t *ch);
-static void fxVibrato(moduleChannel_t *ch);
-static void fxGlissandoVolumeSlide(moduleChannel_t *ch);
-static void fxVibratoVolumeSlide(moduleChannel_t *ch);
-static void fxTremolo(moduleChannel_t *ch);
-static void fxNotInUse(moduleChannel_t *ch);
-static void fxSampleOffset(moduleChannel_t *ch);
-static void fxVolumeSlide(moduleChannel_t *ch);
-static void fxPositionJump(moduleChannel_t *ch);
-static void fxSetVolume(moduleChannel_t *ch);
-static void fxPatternBreak(moduleChannel_t *ch);
-static void fxExtended(moduleChannel_t *ch);
-static void fxSetTempo(moduleChannel_t *ch);
-
-// Extended effects
-static void efxSetLEDFilter(moduleChannel_t *ch);
-static void efxFinePortamentoSlideUp(moduleChannel_t *ch);
-static void efxFinePortamentoSlideDown(moduleChannel_t *ch);
-static void efxGlissandoControl(moduleChannel_t *ch);
-static void efxVibratoControl(moduleChannel_t *ch);
-static void efxSetFineTune(moduleChannel_t *ch);
-static void efxPatternLoop(moduleChannel_t *ch);
-static void efxTremoloControl(moduleChannel_t *ch);
-static void efxKarplusStrong(moduleChannel_t *ch);
-static void efxRetrigNote(moduleChannel_t *ch);
-static void efxFineVolumeSlideUp(moduleChannel_t *ch);
-static void efxFineVolumeSlideDown(moduleChannel_t *ch);
-static void efxNoteCut(moduleChannel_t *ch);
-static void efxNoteDelay(moduleChannel_t *ch);
-static void efxPatternDelay(moduleChannel_t *ch);
-static void efxInvertLoop(moduleChannel_t *ch);
-
-typedef void (*effectRoutine_t)(moduleChannel_t *);
-
-// Normal effects
-static effectRoutine_t fxRoutines[16] =
+void modSetSpeed(uint8_t speed)
 {
-    fxArpeggio,
-    fxPitchSlideUp,
-    fxPitchSlideDown,
-    fxGlissando,
-    fxVibrato,
-    fxGlissandoVolumeSlide,
-    fxVibratoVolumeSlide,
-    fxTremolo,
-    fxNotInUse,
-    fxSampleOffset,
-    fxVolumeSlide,
-    fxPositionJump,
-    fxSetVolume,
-    fxPatternBreak,
-    fxExtended,
-    fxSetTempo
-};
-
-// Extended effects
-static effectRoutine_t efxRoutines[16] =
-{
-    efxSetLEDFilter,
-    efxFinePortamentoSlideUp,
-    efxFinePortamentoSlideDown,
-    efxGlissandoControl,
-    efxVibratoControl,
-    efxSetFineTune,
-    efxPatternLoop,
-    efxTremoloControl,
-    efxKarplusStrong,
-    efxRetrigNote,
-    efxFineVolumeSlideUp,
-    efxFineVolumeSlideDown,
-    efxNoteCut,
-    efxNoteDelay,
-    efxPatternDelay,
-    efxInvertLoop
-};
-
-void storeTempVariables(void) // this one is accessed in other files, so non-static
-{
-    oldBPM     = modEntry->currBPM;
-    oldRow     = modEntry->currRow;
-    oldOrder   = modEntry->currOrder;
-    oldSpeed   = modEntry->currSpeed;
-    oldPattern = modEntry->currPattern;
-}
-
-static void processInvertLoop(moduleChannel_t *ch)
-{
-    if (ch->invertLoopSpeed > 0)
-    {
-        ch->invertLoopDelay += funkTable[ch->invertLoopSpeed];
-        if (ch->invertLoopDelay >= 128)
-        {
-            ch->invertLoopDelay = 0;
-
-            if (ch->invertLoopPtr != NULL) // safety check that wasn't present in original PT
-            {
-                ch->invertLoopPtr++;
-                if (ch->invertLoopPtr >= (ch->invertLoopStart + ch->invertLoopLength))
-                    ch->invertLoopPtr  =  ch->invertLoopStart;
-
-                *ch->invertLoopPtr = -1 - *ch->invertLoopPtr;
-            }
-        }
-    }
-}
-
-static void efxSetLEDFilter(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-        setLEDFilter(!(ch->param & 1));
-}
-
-static void efxFinePortamentoSlideUp(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-    {
-        if (tempPeriod > 0)
-        {
-            ch->period -= (ch->param & 0x0F);
-
-            if ((ch->period & 0x0FFF) < 113)
-            {
-                ch->period &= 0xF000;
-                ch->period |= 113;
-            }
-
-            tempPeriod = ch->period & 0x0FFF;
-        }
-    }
-}
-
-static void efxFinePortamentoSlideDown(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-    {
-        if (tempPeriod > 0)
-        {
-            ch->period += (ch->param & 0x0F);
-
-            if ((ch->period & 0x0FFF) > 856)
-            {
-                ch->period &= 0xF000;
-                ch->period |= 856;
-            }
-
-            tempPeriod = ch->period & 0x0FFF;
-        }
-    }
-}
-
-static void efxGlissandoControl(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-        ch->glissandoControl = ch->param & 0x0F;
-}
-
-static void efxVibratoControl(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-        ch->waveControl = (ch->waveControl & 0xF0) | (ch->param & 0x0F);
-}
-
-static void efxSetFineTune(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-        ch->fineTune = ch->param & 0x0F;
-}
-
-static void efxPatternLoop(moduleChannel_t *ch)
-{
-    uint8_t tempParam;
-
-    if (editor.modTick == 0)
-    {
-        tempParam = ch->param & 0x0F;
-        if (tempParam == 0)
-        {
-            ch->patternLoopRow = modEntry->row;
-
-            return;
-        }
-
-        if (ch->pattLoopCounter == 0)
-        {
-            ch->pattLoopCounter = tempParam;
-        }
-        else
-        {
-            if (--ch->pattLoopCounter == 0)
-                return;
-        }
-
-        pBreakPosition = ch->patternLoopRow;
-        pBreakFlag = true;
-
-        if (editor.isWAVRendering)
-        {
-            for (tempParam = pBreakPosition; tempParam <= modEntry->row; ++tempParam)
-                editor.rowVisitTable[(modOrder * MOD_ROWS) + tempParam] = false;
-        }
-    }
-}
-
-static void efxTremoloControl(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-        ch->waveControl = (ch->param << 4) | (ch->waveControl & 0x0F);
-}
-
-static void efxKarplusStrong(moduleChannel_t *ch)
-{
-    // Karplus-Strong, my enemy...
-    // 1) Almost no one used it as Karplus-Strong
-    // 2) It trashes sample data, and it's not even worth it (invertloop (EFx) is much cooler)
-    // 3) Often used as effect syncing, so we don't want to destroy sample(s) when playing
-
-    (void)(ch);
-}
-
-static void efxRetrigNote(moduleChannel_t *ch)
-{
-    uint8_t retrigTick;
-
-    retrigTick = ch->param & 0x0F;
-    if (retrigTick > 0)
-    {
-        if ((editor.modTick % retrigTick) == 0)
-            tempFlags |= TEMPFLAG_START;
-    }
-}
-
-static void efxFineVolumeSlideUp(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-    {
-        ch->volume += (ch->param & 0x0F);
-        if (ch->volume > 64)
-            ch->volume = 64;
-
-        tempVolume = ch->volume;
-    }
-}
-
-static void efxFineVolumeSlideDown(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-    {
-        ch->volume -= (ch->param & 0x0F);
-        if (ch->volume < 0)
-            ch->volume = 0;
-
-        tempVolume = ch->volume;
-    }
-}
-
-static void efxNoteCut(moduleChannel_t *ch)
-{
-    if (editor.modTick == (ch->param & 0x0F))
-    {
-        ch->volume = 0;
-        tempVolume = 0;
-        ch->scopeVolume = volumeToScopeVolume(0);
-    }
-}
-
-static void efxNoteDelay(moduleChannel_t *ch)
-{
-    uint8_t delayTick;
-
-    delayTick = ch->param & 0x0F;
-
-    if (editor.modTick == 0)
-        ch->tempFlagsBackup = tempFlags;
-
-         if (editor.modTick  < delayTick) tempFlags = TEMPFLAG_DELAY;
-    else if (editor.modTick == delayTick) tempFlags = ch->tempFlagsBackup;
-}
-
-static void efxPatternDelay(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-    {
-        if (pattDelayTime2 == 0)
-        {
-            pattDelayFlag = true;
-            pattDelayTime = (ch->param & 0x0F) + 1;
-        }
-    }
-}
-
-static void efxInvertLoop(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-    {
-        ch->invertLoopSpeed = ch->param & 0x0F;
-
-        if (ch->invertLoopSpeed > 0)
-            processInvertLoop(ch);
-    }
-}
-
-void setTonePorta(moduleChannel_t *ch, uint16_t period)
-{
-    uint8_t i;
-    uint16_t *tablePointer;
-
-    tablePointer = &periodTable[37 * ch->fineTune];
-
-    i = 0;
-    for (;;)
-    {
-        if (period >= tablePointer[i])
-            break;
-
-        if (++i >= 37)
-        {
-            i = 35;
-            break;
-        }
-    }
-
-    if ((ch->fineTune & 8) && i) i--; // not sure why PT does this...
-
-    ch->wantedperiod  = tablePointer[i];
-    ch->tonePortDirec = 0;
-
-         if (ch->period == ch->wantedperiod) ch->wantedperiod  = 0; // don't do any more slides
-    else if (ch->period >  ch->wantedperiod) ch->tonePortDirec = 1;
-}
-
-static void processGlissando(moduleChannel_t *ch)
-{
-    uint8_t i;
-    uint16_t *tablePointer;
-
-    if (tempPeriod == 0)
-    {
-        ch->wantedperiod = 0; // don't do any more sliding
-        return;
-    }
-
-    if (ch->wantedperiod > 0)
-    {
-        if (ch->tonePortDirec == 0)
-        {
-            ch->period += ch->tonePortSpeed;
-            if ((signed)(int16_t)(ch->period) >= ch->wantedperiod)
-            {
-                ch->period = ch->wantedperiod;
-                ch->wantedperiod = 0; // don't do any more sliding
-            }
-        }
-        else
-        {
-            ch->period -= ch->tonePortSpeed;
-            if ((signed)(int16_t)(ch->period) <= ch->wantedperiod)
-            {
-                ch->period = ch->wantedperiod;
-                ch->wantedperiod = 0; // don't do any more sliding
-            }
-        }
-
-        if (tempPeriod > 0)
-        {
-            if (ch->glissandoControl == 0)
-            {
-                // smooth sliding (default)
-                tempPeriod = ch->period;
-            }
-            else 
-            {
-                // semitone sliding
-                tablePointer = &periodTable[37 * ch->fineTune];
-
-                i = 0;
-                for (;;)
-                {
-                    if (ch->period >= tablePointer[i])
-                        break;
-
-                    if (++i >= 37)
-                    {
-                        i = 35;
-                        break;
-                    }
-                }
-
-                tempPeriod = tablePointer[i];
-            }
-        }
-    }
-}
-
-static void processVibrato(moduleChannel_t *ch)
-{
-    int16_t vibratoData;
-
-    if (tempPeriod > 0)
-    {
-        switch (ch->waveControl & 3)
-        {
-            // sine (0)
-            case 0: vibratoData = vibratoTable[ch->vibratoPos & 31]; break;
-
-            // ramp (1)
-            case 1:
-            {
-                if (ch->vibratoPos < 32)
-                    vibratoData = 255 - ((ch->vibratoPos & 31) * 8);
-                else
-                    vibratoData = (ch->vibratoPos & 31) * 8;
-            }
-            break;
-
-            // square (2,3)   3 is NOT "random mode" in PT, it's the same as square
-            default: vibratoData = 255; break;
-        }
-
-        vibratoData = (vibratoData * (ch->vibratoCmd & 0x0F)) / 128;
-
-        // ProTracker doesn't clamp the period here! Big mistake...
-        if (ch->vibratoPos < 32)
-            tempPeriod += vibratoData; // max. end result period (C-1 finetune -8): 936
-        else
-            tempPeriod -= vibratoData; // min. end result period (B-3 finetune +7): 79
-
-        ch->vibratoPos += (ch->vibratoCmd >> 4);
-        ch->vibratoPos &= 63;
-
-        // for quadrascope
-        ch->scopeKeepDelta = false;
-        periodToScopeDelta(ch, tempPeriod);
-    }
-}
-
-static void processTremolo(moduleChannel_t *ch)
-{
-    uint8_t tremoloData;
-
-    switch ((ch->waveControl >> 4) & 3)
-    {
-        // sine (0)
-        case 0: tremoloData = vibratoTable[ch->tremoloPos & 31]; break;
-
-        // ramp (1)
-        case 1:
-        {
-            if (ch->vibratoPos < 32) // ProTracker bug (should've been tremoloPos)
-                tremoloData = 255 - ((ch->tremoloPos & 31) * 8);
-            else
-                tremoloData = (ch->tremoloPos & 31) * 8;
-        }
-        break;
-
-        // square (2,3)   3 is NOT "random mode" in PT, it's the same as square
-        default: tremoloData = 255; break;
-    }
-
-    tremoloData = (tremoloData * (ch->tremoloCmd & 0x0F)) / 64;
-
-    if (ch->tremoloPos < 32)
-    {
-        tempVolume += tremoloData;
-        if (tempVolume > 64)
-            tempVolume = 64;
-    }
-    else
-    {
-        tempVolume -= tremoloData;
-        if (tempVolume < 0)
-            tempVolume = 0;
-    }
-
-    ch->tremoloPos += (ch->tremoloCmd >> 4);
-    ch->tremoloPos &= 63;
-
-    // for quadrascope
-    ch->scopeKeepVolume = false;
-    ch->scopeVolume = volumeToScopeVolume(tempVolume);
-}
-
-static void fxArpeggio(moduleChannel_t *ch)
-{
-    uint8_t i, noteToAdd, arpeggioTick;
-    uint16_t *tablePointer;
-
-    if (tempPeriod > 0)
-    {
-        noteToAdd    = 0;
-        arpeggioTick = editor.modTick % 3;
-
-        if (arpeggioTick == 0)
-        {
-            tempPeriod = ch->period;
-            return;
-        }
-        else if (arpeggioTick == 1)
-        {
-            noteToAdd = ch->param >> 4;
-        }
-        else if (arpeggioTick == 2)
-        {
-            noteToAdd = ch->param & 0x0F;
-        }
-
-        tablePointer = &periodTable[37 * ch->fineTune];
-        for (i = 0; i < 36; ++i)
-        {
-            if (ch->period >= tablePointer[i])
-            {
-                tempPeriod = tablePointer[i + noteToAdd];
-
-                // for quadrascope
-                ch->scopeKeepDelta = false;
-                periodToScopeDelta(ch, tempPeriod);
-
-                break;
-            }
-        }
-    }
-}
-
-static void fxPitchSlideUp(moduleChannel_t *ch)
-{
-    if ((editor.modTick > 0) || (pattDelayTime2 > 0)) // all ticks while EDx (weird)
-    {
-        if (tempPeriod > 0)
-        {
-            // This has a PT bug where the period overflows,
-            // resulting in extremely high periods.
-
-            ch->period -= ch->param;
-
-            if ((ch->period & 0x0FFF) < 113)
-            {
-                ch->period &= 0xF000;
-                ch->period |= 113;
-            }
-
-            tempPeriod = ch->period & 0x0FFF;
-        }
-    }
-}
-
-static void fxPitchSlideDown(moduleChannel_t *ch)
-{
-    if ((editor.modTick > 0) || (pattDelayTime2 > 0)) // all ticks while EDx (weird)
-    {
-        if (tempPeriod > 0)
-        {
-            ch->period += ch->param;
-
-            if ((ch->period & 0x0FFF) > 856)
-            {
-                ch->period &= 0xF000;
-                ch->period |= 856;
-            }
-
-            tempPeriod = ch->period & 0x0FFF;
-        }
-    }
-}
-
-static void fxGlissando(moduleChannel_t *ch)
-{
-    if ((editor.modTick > 0) || (pattDelayTime2 > 0)) // all ticks while EDx (weird)
-    {
-        if (ch->param != 0)
-        {
-            ch->tonePortSpeed = ch->param;
-            ch->param = 0;
-        }
-
-        processGlissando(ch);
-    }
-}
-
-static void fxVibrato(moduleChannel_t *ch)
-{
-    if ((editor.modTick > 0) || (pattDelayTime2 > 0)) // all ticks while EDx (weird)
-    {
-        if (ch->param != 0)
-        {
-            if (ch->param & 0x0F) ch->vibratoCmd = (ch->vibratoCmd & 0xF0) | (ch->param & 0x0F);
-            if (ch->param & 0xF0) ch->vibratoCmd = (ch->param & 0xF0) | (ch->vibratoCmd & 0x0F);
-        }
-
-        processVibrato(ch);
-    }
-}
-
-static void fxGlissandoVolumeSlide(moduleChannel_t *ch)
-{
-    if ((editor.modTick > 0) || (pattDelayTime2 > 0)) // all ticks while EDx (weird)
-    {
-        processGlissando(ch);
-        fxVolumeSlide(ch);
-    }
-}
-
-static void fxVibratoVolumeSlide(moduleChannel_t *ch)
-{
-    if ((editor.modTick > 0) || (pattDelayTime2 > 0)) // all ticks while EDx (weird)
-    {
-        processVibrato(ch);
-        fxVolumeSlide(ch);
-    }
-}
-
-static void fxTremolo(moduleChannel_t *ch)
-{
-    if ((editor.modTick > 0) || (pattDelayTime2 > 0)) // all ticks while EDx (weird)
-    {
-        if (ch->param != 0)
-        {
-            if (ch->param & 0x0F) ch->tremoloCmd = (ch->tremoloCmd & 0xF0) | (ch->param & 0x0F);
-            if (ch->param & 0xF0) ch->tremoloCmd = (ch->param & 0xF0) | (ch->tremoloCmd & 0x0F);
-        }
-
-        processTremolo(ch);
-    }
-}
-
-static void fxNotInUse(moduleChannel_t *ch)
-{
-    // This is an empty effect slot not used in
-    // ProTracker... often used for demo efx syncing
-    //
-    // Used for panning in Fasttracker and other .MOD trackers
-
-    (void)(ch);
-}
-
-static void fxSampleOffset(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-    {
-        if (ch->param > 0)
-            ch->offsetTemp = 256 * ch->param;
-
-        ch->offset += ch->offsetTemp;
-
-        if (!ch->noNote)
-            ch->offsetBugNotAdded = false;
-    }
-}
-
-static void fxVolumeSlide(moduleChannel_t *ch)
-{
-    uint8_t hiNybble, loNybble;
-
-    if ((editor.modTick > 0) || (pattDelayTime2 > 0)) // all ticks while EDx (weird)
-    {
-        hiNybble = ch->param >> 4;
-        loNybble = ch->param & 0x0F;
-
-        if (hiNybble == 0)
-        {
-            ch->volume -= loNybble;
-            if (ch->volume < 0)
-                ch->volume = 0;
-        }
-        else
-        {
-            ch->volume += hiNybble;
-            if (ch->volume > 64)
-                ch->volume = 64;
-        }
-
-        tempVolume = ch->volume;
-    }
-}
-
-static void fxPositionJump(moduleChannel_t *ch)
-{
-    if (editor.isSMPRendering)
-    {
-        modHasBeenPlayed = true;
-    }
-    else
-    {
-        if (editor.modTick == 0)
-        {
-            if (editor.isWAVRendering)
-            {
-                modOrder = ch->param - 1;
-            }
-            else
-            {
-                if (editor.playMode != PLAY_MODE_PATTERN)
-                {
-                    modOrder = (ch->param & 0x7F) - 1;
-                    if (modOrder == -1)
-                        modOrder = modEntry->head.orderCount - 1;
-                }
-            }
-
-            pBreakPosition  = 0;
-            pattBreakBugPos = 0;
-
-            pattBreakFlag = true;
-            posJumpAssert = true;
-        }
-    }
-}
-
-static void fxSetVolume(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-    {
-        if (ch->param > 64)
-            ch->param = 64;
-
-        ch->volume = ch->param;
-        tempVolume = ch->param;
-    }
-}
-
-static void fxPatternBreak(moduleChannel_t *ch)
-{
-    uint8_t pos;
-
-    if (editor.isSMPRendering)
-    {
-        modHasBeenPlayed = true;
-    }
-    else
-    {
-        if (editor.modTick == 0)
-        {
-            pos = ((ch->param >> 4) * 10) + (ch->param & 0x0F);
-
-            pBreakPosition  = (pos <= 63) ? pos : 0;
-            pattBreakBugPos = pBreakPosition;
-
-            pattBreakFlag = true;
-            posJumpAssert = true;
-        }
-    }
-}
-
-static void fxExtended(moduleChannel_t *ch)
-{
-    efxRoutines[ch->param >> 4](ch);
-}
-
-static void fxSetTempo(moduleChannel_t *ch)
-{
-    if (editor.modTick == 0)
-    {
-        if ((ch->param < 32) || (editor.timingMode == TEMPO_MODE_VBLANK))
-        {
-            if (ch->param == 0)
-            {
-                // stop song (literally)
-
-                if (editor.isWAVRendering)
-                {
-                    modHasBeenPlayed = true;
-                    return;
-                }
-
-                editor.songPlaying = false;
-
-                editor.currMode = MODE_IDLE;
-                pointerSetMode(POINTER_MODE_IDLE, DO_CARRY);
-                setStatusMessage(editor.allRightText, DO_CARRY);
-            }
-            else
-            {
-                modSetSpeed(ch->param);
-            }
-        }
-        else
-        {
-            setBPMFlag = ch->param; // CIA doesn't refresh its registers until the next interrupt, so change it later
-        }
-    }
-}
-
-static void processEffects(moduleChannel_t *ch)
-{
-    if (editor.modTick > 0)
-        processInvertLoop(ch);
-
-    if ((!ch->command && !ch->param) == 0)
-        fxRoutines[ch->command](ch);
-}
-
-static void fetchPatternData(moduleChannel_t *ch)
-{
-    int8_t tempNote;
-    uint8_t i;
-    int16_t tempPer;
-    note_t *note;
-
-    note = &modEntry->patterns[modPattern][(modEntry->row * AMIGA_VOICES) + ch->chanIndex];
-    if ((note->sample >= 1) && (note->sample <= 31))
-    {
-        ch->flags |= FLAG_SAMPLE;
-
-        if (ch->sample != note->sample)
-            ch->flags  |= FLAG_NEWSAMPLE;
-
-        ch->sample   = note->sample;
-        ch->fineTune = modEntry->samples[ch->sample - 1].fineTune;
-    }
-
-    ch->command = note->command;
-    ch->param   = note->param;
-
-    if ((note->period & 0x0FFF) > 0)
-    {
-        ch->flags |= FLAG_NOTE;
-        ch->noNote = false;
-
-        // set finetune if E5x is called next to a note
-        if (ch->command == 0x0E)
-        {
-            if ((ch->param >> 4) == 0x05)
-                ch->fineTune = ch->param & 0x0F;
-        }
-
-        // setup 3xx/5xx (portamento)
-        if ((ch->command == 0x03) || (ch->command == 0x05))
-            setTonePorta(ch, note->period);
-
-        tempPer = note->period & 0x0FFF;
-        for (i = 0; i < 37; ++i)
-        {
-            // periodTable[36] = 0, so i=36 is safe
-            if (tempPer >= periodTable[i])
-                break;
-        }
-
-        // BUG: yes it's 'safe' if i=37 because of padding at the end of the period table
-        ch->tempPeriod = periodTable[(37 * ch->fineTune) + i];
-    }
-    else
-    {
-        ch->noNote = true;
-    }
-
-    // handle the metronome (if active)
-    if (editor.metroFlag && (editor.metroChannel > 0))
-    {
-        if ((ch->chanIndex == (editor.metroChannel - 1)) && ((modEntry->row % editor.metroSpeed) == 0))
-        {
-            ch->flags |= FLAG_SAMPLE;
-            ch->flags |= FLAG_NOTE;
-            ch->noNote = false;
-
-            ch->sample   = 0x1F; // the metronome always uses the very last sample slot
-            ch->fineTune = modEntry->samples[ch->sample - 1].fineTune;
-
-            // set finetune if E5x is entered (this time even if no note was entered)
-            if (ch->command == 0x0E)
-            {
-                if ((ch->param >> 4) == 0x05)
-                    ch->fineTune = ch->param & 0x0F;
-            }
-
-            tempNote = (((modEntry->row / editor.metroSpeed) % editor.metroSpeed) == 0) ? 29 : 24;
-            ch->tempPeriod = periodTable[(37 * ch->fineTune) + tempNote];
-        }
-    }
-}
-
-static void processChannel(moduleChannel_t *ch)
-{
-    uint8_t setVUMeters;
-    moduleSample_t *s;
-
-    tempFlags = 0;
-
-    setVUMeters = false;
-    if (editor.modTick == 0)
-    {
-        if (pattDelayTime2 == 0)
-            fetchPatternData(ch);
-
-        // In PT, the spectrum analyzer doesn't use the last volume affected
-        // by volume effects. It just uses the last s->sample value for
-        // the current channel.
-        // So we use a separate variable for this, and update it before
-        // we update the spectrum analyzer for correct visual results.
-        if (ch->flags & FLAG_SAMPLE)
-        {
-            if (ch->sample != 0)
-                ch->rawVolume = modEntry->samples[ch->sample - 1].volume;
-        }
-
-        if (ch->flags & FLAG_NOTE)
-        {
-            ch->flags &= ~FLAG_NOTE;
-
-            setVUMeters = true;
-
-            if ((ch->command != 0x03) && (ch->command != 0x05))
-            {
-                if (ch->sample != 0)
-                    tempFlags |= TEMPFLAG_START;
-
-                ch->period = ch->tempPeriod; // ranging 113..856 at this point
-
-                // update spectrum analyzer if neeeded
-                if (!editor.isWAVRendering && !editor.isSMPRendering &&
-                    (editor.ui.visualizerMode == VISUAL_SPECTRUM) &&
-                    !editor.muted[ch->chanIndex])
-                {
-                    updateSpectrumAnalyzer(ch->period, ch->rawVolume);
-                }
-            }
-
-            ch->tempFlagsBackup = 0;
-
-            if ((ch->waveControl & 0x04) == 0) ch->vibratoPos = 0;
-            if ((ch->waveControl & 0x40) == 0) ch->tremoloPos = 0;
-        }
-
-        if (ch->flags & FLAG_SAMPLE)
-        {
-            ch->flags &= ~FLAG_SAMPLE;
-
-            if (ch->sample != 0)
-            {
-                s = &modEntry->samples[ch->sample - 1];
-
-                setVUMeters = true;
-
-                ch->volume = s->volume;
-
-                ch->invertLoopPtr    = &modEntry->sampleData[s->offset + s->loopStart];
-                ch->invertLoopStart  = ch->invertLoopPtr;
-                ch->invertLoopLength = s->loopLength;
-
-                if ((ch->command != 0x03) && (ch->command != 0x05))
-                {
-                    ch->offset = 0;
-                    ch->offsetBugNotAdded = true;
-                }
-
-                if (ch->flags & FLAG_NEWSAMPLE)
-                {
-                    ch->flags &= ~FLAG_NEWSAMPLE;
-
-                    // sample swap (even during note delays... makes sense, doesn't it?)
-                    if (ch->sample != 0)
-                    {
-                        s = &modEntry->samples[ch->sample - 1];
-                        mixerSwapVoiceSource(ch->chanIndex, modEntry->sampleData + s->offset, s->length, s->loopStart, s->loopLength, s->offset);
-                    }
-                }
-            }
-        }
-    }
-
-    tempPeriod = ch->period;
-    tempVolume = ch->volume;
-
-    ch->scopeKeepDelta  = true;
-    ch->scopeKeepVolume = true;
-
-    if (!forceEffectsOff)
-        processEffects(ch);
-
-    if ((editor.modTick == 0) && setVUMeters)
-    {
-        if (!editor.isWAVRendering && !editor.isSMPRendering && !editor.muted[ch->chanIndex])
-            editor.vuMeterVolumes[ch->chanIndex] = vuMeterHeights[tempVolume];
-    }
-
-    mixerSetVoiceVol(ch->chanIndex, tempVolume); // update volume even if note delay (PT behavior)
-
-    if (!(tempFlags & TEMPFLAG_DELAY))
-    {
-        if (tempFlags & TEMPFLAG_START)
-        {
-            if (ch->sample != 0)
-            {
-                s = &modEntry->samples[ch->sample - 1];
-
-                if (s->length > 0)
-                {
-                    if (!editor.isWAVRendering)
-                        ch->scopeTrigger = true;
-
-                    if (ch->offset > 0)
-                    {
-                        mixerSetVoiceSource(ch->chanIndex, modEntry->sampleData + s->offset, s->length, s->loopStart, s->loopLength, ch->offset);
-
-                        if (!editor.isWAVRendering && !editor.isSMPRendering)
-                        {
-                            ch->scopeChangePos = true;
-                            if (s->loopLength > 2)
-                            {
-                                if (ch->offset >= (s->loopStart + s->loopLength))
-                                    ch->scopePos_f = s->offset + (s->loopStart + s->loopLength);
-                                else
-                                    ch->scopePos_f = s->offset + ch->offset;
-                            }
-                            else
-                            {
-                                if (ch->offset >= s->length)
-                                {
-                                    ch->scopeEnabled = false;
-                                    ch->scopeTrigger = false;
-                                }
-                                else
-                                {
-                                    ch->scopePos_f = s->offset + ch->offset;
-                                }
-                            }
-
-                            // PT bug: Sample len >65535 + 9xx efx = stop sample (scopes this time)
-                            if ((s->length > 65535) && (ch->offset > 0))
-                            {
-                                ch->scopeEnabled = false;
-                                ch->scopeTrigger = false;
-                            }
-                        }
-
-                        if (!ch->offsetBugNotAdded)
-                        {
-                            ch->offset += ch->offsetTemp; // emulates add sample offset bug (fixes some quirky MODs)
-                            if (ch->offset > 0xFFFF)
-                                ch->offset = 0xFFFF;
-
-                            ch->offsetBugNotAdded = true;
-                        }
-                    }
-                    else
-                    {
-                        mixerSetVoiceSource(ch->chanIndex, modEntry->sampleData + s->offset, s->length, s->loopStart, s->loopLength, 0);
-                    }
-                }
-                else
-                {
-                    ch->scopeEnabled = false;
-                    ch->scopeTrigger = false;
-
-                    mixerKillVoice(ch->chanIndex);
-                }
-            }
-        }
-
-        mixerSetVoiceDelta(ch->chanIndex, tempPeriod);
-    }
+    editor.modSpeed = speed;
+    modEntry->currSpeed = speed;
+    editor.modTick = 0;
 }
 
 void doStopIt(void)
 {
+    moduleChannel_t *c;
     uint8_t i;
 
-    pattDelayTime      = 0;
-    pattDelayTime2     = 0;
+    pattDelTime        = 0;
+    pattDelTime2       = 0;
     editor.playMode    = PLAY_MODE_NORMAL;
     editor.currMode    = MODE_IDLE;
     editor.songPlaying = false;
@@ -1092,11 +49,12 @@ void doStopIt(void)
 
     for (i = 0; i < AMIGA_VOICES; ++i)
     {
-        modEntry->channels[i].fineTune         = 0;
-        modEntry->channels[i].waveControl      = 0;
-        modEntry->channels[i].invertLoopSpeed  = 0;
-        modEntry->channels[i].pattLoopCounter  = 0;
-        modEntry->channels[i].glissandoControl = 0;
+        c = &modEntry->channels[i];
+
+        c->n_wavecontrol = 0;
+        c->n_glissfunk   = 0;
+        c->n_finetune    = 0;
+        c->n_loopcount   = 0;
     }
 }
 
@@ -1109,9 +67,770 @@ void setPattern(int16_t pattern)
     modEntry->currPattern = modPattern;
 }
 
+void storeTempVariables(void) // this one is accessed in other files, so non-static
+{
+    oldBPM     = modEntry->currBPM;
+    oldRow     = modEntry->currRow;
+    oldOrder   = modEntry->currOrder;
+    oldSpeed   = modEntry->currSpeed;
+    oldPattern = modEntry->currPattern;
+}
+
+static void setVUMeterHeight(moduleChannel_t *ch)
+{
+    int8_t vol;
+
+    vol = ch->n_volume;
+    if ((ch->n_cmd & 0x0F00) == 0x0C00) // handle Cxx effect
+    {
+        vol = ch->n_cmd & 0xFF;
+        if (vol > 0x40)
+            vol = 0x40;
+    }
+
+    if (!editor.muted[ch->n_chanindex])
+        editor.vuMeterVolumes[ch->n_chanindex] = vuMeterHeights[vol];
+}
+
+static void updateFunk(moduleChannel_t *ch)
+{
+    int8_t funkspeed;
+
+    funkspeed = ch->n_glissfunk >> 4;
+    if (funkspeed > 0)
+    {
+        ch->n_funkoffset += funkTable[funkspeed];
+        if (ch->n_funkoffset >= 128)
+        {
+            ch->n_funkoffset = 0;
+
+            if ((ch->n_loopstart != NULL) && (ch->n_wavestart != NULL)) // SAFETY BUG FIX
+            {
+                if (++ch->n_wavestart >= (ch->n_loopstart + ch->n_replen))
+                      ch->n_wavestart  =  ch->n_loopstart;
+
+                if (ch->n_wavestart != NULL) // SAFETY BUG FIX
+                    *ch->n_wavestart = -1 - *ch->n_wavestart;
+            }
+        }
+    }
+}
+
+static void setGlissControl(moduleChannel_t *ch)
+{
+    ch->n_glissfunk = (ch->n_glissfunk & 0xF0) | (ch->n_cmd & 0x000F);
+}
+
+static void setVibratoControl(moduleChannel_t *ch)
+{
+    ch->n_wavecontrol = (ch->n_wavecontrol & 0xF0) | (ch->n_cmd & 0x000F);
+}
+
+static void setFineTune(moduleChannel_t *ch)
+{
+    ch->n_finetune = ch->n_cmd & 0x000F;
+}
+
+static void jumpLoop(moduleChannel_t *ch)
+{
+    uint8_t tempParam;
+
+    if (!editor.modTick)
+    {
+        if (!(ch->n_cmd & 0x000F))
+        {
+            ch->n_pattpos = modEntry->row;
+        }
+        else
+        {
+            if (!ch->n_loopcount)
+            {
+                ch->n_loopcount = ch->n_cmd & 0x000F;
+            }
+            else
+            {
+                if (!--ch->n_loopcount)
+                    return;
+            }
+
+            pBreakPosition = ch->n_pattpos;
+            pBreakFlag = 1;
+
+            if (editor.isWAVRendering)
+            {
+                for (tempParam = pBreakPosition; tempParam <= modEntry->row; ++tempParam)
+                    editor.rowVisitTable[(modOrder * MOD_ROWS) + tempParam] = false;
+            }
+        }
+    }
+}
+
+static void setTremoloControl(moduleChannel_t *ch)
+{
+    ch->n_wavecontrol = ((ch->n_cmd & 0x000F) << 4) | (ch->n_wavecontrol & 0x0F);
+}
+
+static void karplusStrong(moduleChannel_t *ch)
+{
+    (void)(ch);
+    // this effect is horrible, I'm not implementing it.
+}
+
+static void doRetrg(moduleChannel_t *ch)
+{
+    paulaSetData(ch->n_chanindex,   ch->n_start); // n_start is increased on 9xx
+    paulaSetLength(ch->n_chanindex, ch->n_length);
+    paulaSetPeriod(ch->n_chanindex, ch->n_period);
+    paulaRestartDMA(ch->n_chanindex);
+
+    // these take effect after the current DMA cycle is done
+    paulaSetData(ch->n_chanindex,   ch->n_loopstart);
+    paulaSetLength(ch->n_chanindex, ch->n_replen);
+
+    updateSpectrumAnalyzer(ch->n_chanindex, ch->n_volume, ch->n_period);
+    setVUMeterHeight(ch);
+}
+
+static void retrigNote(moduleChannel_t *ch)
+{
+    if (ch->n_cmd & 0x000F)
+    {
+        if (!editor.modTick)
+        {
+            if (ch->n_note & 0x0FFF)
+                return;
+        }
+
+        if (!(editor.modTick % (ch->n_cmd & 0x000F)))
+            doRetrg(ch);
+    }
+}
+
+static void volumeSlide(moduleChannel_t *ch)
+{
+    uint8_t cmd;
+
+    cmd = ch->n_cmd & 0x00FF;
+    if (!(cmd & 0xF0))
+    {
+        ch->n_volume -= (cmd & 0x0F);
+        if (ch->n_volume < 0)
+            ch->n_volume = 0;
+    }
+    else
+    {
+        ch->n_volume += (cmd >> 4);
+        if (ch->n_volume > 64)
+            ch->n_volume = 64;
+    }
+}
+
+static void volumeFineUp(moduleChannel_t *ch)
+{
+    if (!editor.modTick)
+    {
+        ch->n_volume += (ch->n_cmd & 0x000F);
+        if (ch->n_volume > 64)
+            ch->n_volume = 64;
+    }
+}
+
+static void volumeFineDown(moduleChannel_t *ch)
+{
+    if (!editor.modTick)
+    {
+        ch->n_volume -= (ch->n_cmd & 0x000F);
+        if (ch->n_volume < 0)
+            ch->n_volume = 0;
+    }
+}
+
+static void noteCut(moduleChannel_t *ch)
+{
+    if (editor.modTick == (ch->n_cmd & 0x000F))
+        ch->n_volume = 0;
+}
+
+static void noteDelay(moduleChannel_t *ch)
+{
+    if (editor.modTick == (ch->n_cmd & 0x000F))
+    {
+        if (ch->n_note & 0x0FFF)
+            doRetrg(ch);
+    }
+}
+
+static void patternDelay(moduleChannel_t *ch)
+{
+    if (!editor.modTick)
+    {
+        if (!pattDelTime2)
+            pattDelTime = (ch->n_cmd & 0x000F) + 1;
+    }
+}
+
+static void funkIt(moduleChannel_t *ch)
+{
+    if (!editor.modTick)
+    {
+        ch->n_glissfunk = ((ch->n_cmd & 0x000F) << 4) | (ch->n_glissfunk & 0x0F);
+
+        if (ch->n_glissfunk & 0xF0)
+            updateFunk(ch);
+    }
+}
+
+static void positionJump(moduleChannel_t *ch)
+{
+    modOrder       = (ch->n_cmd & 0x00FF) - 1; // 0xFF (B00) jumps to pat 0
+    pBreakPosition = 0;
+    posJumpAssert  = 1;
+}
+
+static void volumeChange(moduleChannel_t *ch)
+{
+    ch->n_volume = ch->n_cmd & 0x00FF;
+    if (ch->n_volume > 64)
+        ch->n_volume = 64;
+}
+
+static void patternBreak(moduleChannel_t *ch)
+{
+    pBreakPosition = (((ch->n_cmd & 0x00F0) >> 4) * 10) + (ch->n_cmd & 0x000F);
+    if (pBreakPosition > 63)
+        pBreakPosition = 0;
+
+    posJumpAssert = 1;
+}
+
+static void setSpeed(moduleChannel_t *ch)
+{
+    if (ch->n_cmd & 0x00FF)
+    {
+        editor.modTick = 0;
+
+        if ((editor.timingMode == TEMPO_MODE_VBLANK) || ((ch->n_cmd & 0x00FF) < 32))
+            modSetSpeed(ch->n_cmd & 0x00FF);
+        else
+            setBPMFlag = ch->n_cmd & 0x00FF; // CIA doesn't refresh its registers until the next interrupt, so change it later
+    }
+    else
+    {
+        editor.songPlaying = false;
+        editor.playMode    = PLAY_MODE_NORMAL;
+        editor.currMode    = MODE_IDLE;
+        pointerSetMode(POINTER_MODE_IDLE, DO_CARRY);
+    }
+}
+
+static void arpeggio(moduleChannel_t *ch)
+{
+    uint8_t i, dat;
+    const int16_t *arpPointer;
+
+    dat = editor.modTick % 3;
+    if (!dat)
+    {
+        paulaSetPeriod(ch->n_chanindex, ch->n_period);
+    }
+    else
+    {
+             if (dat == 1) dat = (ch->n_cmd & 0x00F0) >> 4;
+        else if (dat == 2) dat =  ch->n_cmd & 0x000F;
+
+        arpPointer = &periodTable[37 * ch->n_finetune];
+        for (i = 0; i < 37; ++i)
+        {
+            if (ch->n_period >= arpPointer[i])
+            {
+                paulaSetPeriod(ch->n_chanindex, arpPointer[i + dat]);
+                break;
+            }
+        }
+    }
+}
+
+static void portaUp(moduleChannel_t *ch)
+{
+    ch->n_period -= ((ch->n_cmd & 0x00FF) & lowMask);
+    lowMask = 0xFF;
+
+    if ((ch->n_period & 0x0FFF) < 113)
+        ch->n_period = (ch->n_period & 0xF000) | 113;
+
+    paulaSetPeriod(ch->n_chanindex, ch->n_period & 0x0FFF);
+}
+
+static void portaDown(moduleChannel_t *ch)
+{
+    ch->n_period += ((ch->n_cmd & 0x00FF) & lowMask);
+    lowMask = 0xFF;
+
+    if ((ch->n_period & 0x0FFF) > 856)
+        ch->n_period = (ch->n_period & 0xF000) | 856;
+
+    paulaSetPeriod(ch->n_chanindex, ch->n_period & 0x0FFF);
+}
+
+static void filterOnOff(moduleChannel_t *ch)
+{
+    setLEDFilter(!(ch->n_cmd & 0x0001));
+}
+
+static void finePortaUp(moduleChannel_t *ch)
+{
+    if (!editor.modTick)
+    {
+        lowMask = 0x0F;
+        portaUp(ch);
+    }
+}
+
+static void finePortaDown(moduleChannel_t *ch)
+{
+    if (!editor.modTick)
+    {
+        lowMask = 0x0F;
+        portaDown(ch);
+    }
+}
+
+static void setTonePorta(moduleChannel_t *ch)
+{
+    uint8_t i;
+    const int16_t *portaPointer;
+    uint16_t note;
+
+    note = ch->n_note & 0x0FFF;
+    portaPointer = &periodTable[37 * ch->n_finetune];
+
+    i = 0;
+    for (;;)
+    {
+        // portaPointer[36] = 0, so i=36 is safe
+        if (note >= portaPointer[i])
+            break;
+
+        if (++i >= 37)
+        {
+            i = 35;
+            break;
+        }
+    }
+
+    if ((ch->n_finetune & 8) && i) i--;
+
+    ch->n_wantedperiod  = portaPointer[i];
+    ch->n_toneportdirec = 0;
+
+         if (ch->n_period == ch->n_wantedperiod) ch->n_wantedperiod  = 0;
+    else if (ch->n_period  > ch->n_wantedperiod) ch->n_toneportdirec = 1;
+}
+
+static void tonePortNoChange(moduleChannel_t *ch)
+{
+    uint8_t i;
+    const int16_t *portaPointer;
+
+    if (ch->n_wantedperiod)
+    {
+        if (ch->n_toneportdirec)
+        {
+            ch->n_period -= ch->n_toneportspeed;
+            if (ch->n_period <= ch->n_wantedperiod)
+            {
+                ch->n_period = ch->n_wantedperiod;
+                ch->n_wantedperiod = 0;
+            }
+        }
+        else
+        {
+            ch->n_period += ch->n_toneportspeed;
+            if (ch->n_period >= ch->n_wantedperiod)
+            {
+                ch->n_period = ch->n_wantedperiod;
+                ch->n_wantedperiod = 0;
+            }
+        }
+
+        if (!(ch->n_glissfunk & 0x0F))
+        {
+            paulaSetPeriod(ch->n_chanindex, ch->n_period);
+        }
+        else
+        {
+            portaPointer = &periodTable[37 * ch->n_finetune];
+
+            i = 0;
+            for (;;)
+            {
+                // portaPointer[36] = 0, so i=36 is safe
+                if (ch->n_period >= portaPointer[i])
+                    break;
+
+                if (++i >= 37)
+                {
+                    i = 35;
+                    break;
+                }
+            }
+
+            paulaSetPeriod(ch->n_chanindex, portaPointer[i]);
+        }
+    }
+}
+
+static void tonePortamento(moduleChannel_t *ch)
+{
+    if (ch->n_cmd & 0x00FF)
+    {
+        ch->n_toneportspeed = ch->n_cmd & 0x00FF;
+        ch->n_cmd &= 0xFF00;
+    }
+
+    tonePortNoChange(ch);
+}
+
+static void vibratoNoChange(moduleChannel_t *ch)
+{
+    uint8_t vibratoTemp;
+    int16_t vibratoData;
+
+    vibratoTemp = (ch->n_vibratopos / 4) & 31;
+    vibratoData = ch->n_wavecontrol & 3;
+
+    if (!vibratoData)
+    {
+        vibratoData = vibratoTable[vibratoTemp];
+    }
+    else
+    {
+        if (vibratoData == 1)
+        {
+            if (ch->n_vibratopos < 0)
+                vibratoData = 255 - (vibratoTemp * 8);
+            else
+                vibratoData = vibratoTemp * 8;
+        }
+        else
+        {
+            vibratoData = 255;
+        }
+    }
+
+    vibratoData = (vibratoData * (ch->n_vibratocmd & 0x0F)) / 128;
+
+    if (ch->n_vibratopos < 0)
+        vibratoData = ch->n_period - vibratoData;
+    else
+        vibratoData = ch->n_period + vibratoData;
+
+    paulaSetPeriod(ch->n_chanindex, vibratoData);
+
+    ch->n_vibratopos += ((ch->n_vibratocmd >> 4) * 4);
+}
+
+static void vibrato(moduleChannel_t *ch)
+{
+    if (ch->n_cmd & 0x00FF)
+    {
+        if (ch->n_cmd & 0x000F)
+            ch->n_vibratocmd = (ch->n_vibratocmd & 0xF0) | (ch->n_cmd & 0x000F);
+
+        if (ch->n_cmd & 0x00F0)
+            ch->n_vibratocmd = (ch->n_cmd & 0x00F0) | (ch->n_vibratocmd & 0x0F);
+    }
+
+    vibratoNoChange(ch);
+}
+
+static void tonePlusVolSlide(moduleChannel_t *ch)
+{
+    tonePortNoChange(ch);
+    volumeSlide(ch);
+}
+
+static void vibratoPlusVolSlide(moduleChannel_t *ch)
+{
+    vibratoNoChange(ch);
+    volumeSlide(ch);
+}
+
+static void tremolo(moduleChannel_t *ch)
+{
+    int8_t tremoloTemp;
+    int16_t tremoloData;
+
+    if (ch->n_cmd & 0x00FF)
+    {
+        if (ch->n_cmd & 0x000F)
+            ch->n_tremolocmd = (ch->n_tremolocmd & 0xF0) | (ch->n_cmd & 0x000F);
+
+        if (ch->n_cmd & 0x00F0)
+            ch->n_tremolocmd = (ch->n_cmd & 0x00F0) | (ch->n_tremolocmd & 0x0F);
+    }
+
+    tremoloTemp = (ch->n_tremolopos / 4) & 31;
+    tremoloData = (ch->n_wavecontrol >> 4) & 3;
+
+    if (!tremoloData)
+    {
+        tremoloData = vibratoTable[tremoloTemp];
+    }
+    else
+    {
+        if (tremoloData == 1)
+        {
+            if (ch->n_vibratopos < 0) // PT bug, should've been n_tremolopos
+                tremoloData = 255 - (tremoloTemp * 8);
+            else
+                tremoloData = tremoloTemp * 8;
+        }
+        else
+        {
+            tremoloData = 255;
+        }
+    }
+
+    tremoloData = (tremoloData * (ch->n_tremolocmd & 0x0F)) / 64;
+
+    if (ch->n_tremolopos < 0)
+    {
+        tremoloData = ch->n_volume - tremoloData;
+        if (tremoloData < 0)
+            tremoloData = 0;
+    }
+    else
+    {
+        tremoloData = ch->n_volume + tremoloData;
+        if (tremoloData > 64)
+            tremoloData = 64;
+    }
+
+    paulaSetVolume(ch->n_chanindex, tremoloData);
+
+    ch->n_tremolopos += ((ch->n_tremolocmd >> 4) * 4);
+}
+
+static void sampleOffset(moduleChannel_t *ch)
+{
+    uint16_t newOffset;
+
+    if (ch->n_cmd & 0x00FF)
+        ch->n_sampleoffset = ch->n_cmd & 0x00FF;
+
+    newOffset = ch->n_sampleoffset * 256;
+
+    if ((ch->n_length <= 65534) && (newOffset < ch->n_length))
+    {
+        ch->n_length -= newOffset;
+        ch->n_start  += newOffset;
+    }
+    else
+    {
+        ch->n_length = 2;
+    }
+}
+
+static void E_Commands(moduleChannel_t *ch)
+{
+    switch ((ch->n_cmd & 0x00F0) >> 4)
+    {
+        case 0x00: filterOnOff(ch);       break;
+        case 0x01: finePortaUp(ch);       break;
+        case 0x02: finePortaDown(ch);     break;
+        case 0x03: setGlissControl(ch);   break;
+        case 0x04: setVibratoControl(ch); break;
+        case 0x05: setFineTune(ch);       break;
+        case 0x06: jumpLoop(ch);          break;
+        case 0x07: setTremoloControl(ch); break;
+        case 0x08: karplusStrong(ch);     break;
+        case 0x09: retrigNote(ch);        break;
+        case 0x0A: volumeFineUp(ch);      break;
+        case 0x0B: volumeFineDown(ch);    break;
+        case 0x0C: noteCut(ch);           break;
+        case 0x0D: noteDelay(ch);         break;
+        case 0x0E: patternDelay(ch);      break;
+        case 0x0F: funkIt(ch);            break;
+        default: break;
+    }
+}
+
+static void checkMoreEffects(moduleChannel_t *ch)
+{
+    switch ((ch->n_cmd & 0x0F00) >> 8)
+    {
+        case 0x09: sampleOffset(ch); break;
+        case 0x0B: positionJump(ch); break;
+        case 0x0D: patternBreak(ch); break;
+        case 0x0E: E_Commands(ch);   break;
+        case 0x0F: setSpeed(ch);     break;
+        case 0x0C: volumeChange(ch); break;
+
+        default: paulaSetPeriod(ch->n_chanindex, ch->n_period); break;
+    }
+}
+
+static void checkEffects(moduleChannel_t *ch)
+{
+    updateFunk(ch);
+
+    if (ch->n_cmd & 0x0FFF)
+    {
+        switch ((ch->n_cmd & 0x0F00) >> 8)
+        {
+            case 0x00: arpeggio(ch);            break;
+            case 0x01: portaUp(ch);             break;
+            case 0x02: portaDown(ch);           break;
+            case 0x03: tonePortamento(ch);      break;
+            case 0x04: vibrato(ch);             break;
+            case 0x05: tonePlusVolSlide(ch);    break;
+            case 0x06: vibratoPlusVolSlide(ch); break;
+            case 0x0E: E_Commands(ch);          break;
+            case 0x07:
+                paulaSetPeriod(ch->n_chanindex, ch->n_period);
+                tremolo(ch);
+            break;
+            case 0x0A:
+                paulaSetPeriod(ch->n_chanindex, ch->n_period);
+                volumeSlide(ch);
+            break;
+
+            default: paulaSetPeriod(ch->n_chanindex, ch->n_period); break;
+        }
+    }
+
+    paulaSetVolume(ch->n_chanindex, ch->n_volume);
+}
+
+static void setPeriod(moduleChannel_t *ch)
+{
+    uint8_t i;
+    uint16_t note;
+
+    note = ch->n_note & 0x0FFF;
+    for (i = 0; i < 37; ++i)
+    {
+        // periodTable[36] = 0, so i=36 is safe
+        if (note >= periodTable[i])
+            break;
+    }
+
+    // BUG: yes it's 'safe' if i=37 because of padding at the end of period table
+    ch->n_period = periodTable[(37 * ch->n_finetune) + i];
+
+    if ((ch->n_cmd & 0x0FF0) != 0x0ED0) // no note delay
+    {
+        if (!(ch->n_wavecontrol & 0x04)) ch->n_vibratopos = 0;
+        if (!(ch->n_wavecontrol & 0x40)) ch->n_tremolopos = 0;
+
+        paulaSetLength(ch->n_chanindex, ch->n_length);
+        paulaSetData(ch->n_chanindex,   ch->n_start);
+
+        if (ch->n_start == NULL)
+        {
+            ch->n_loopstart = NULL;
+            paulaSetLength(ch->n_chanindex, 2);
+            ch->n_replen = 2;
+        }
+
+        paulaSetPeriod(ch->n_chanindex, ch->n_period);
+        paulaRestartDMA(ch->n_chanindex);
+
+        updateSpectrumAnalyzer(ch->n_chanindex, ch->n_volume, ch->n_period);
+        setVUMeterHeight(ch);
+    }
+
+    checkMoreEffects(ch);
+}
+
+static void checkMetronome(moduleChannel_t *ch, note_t *note)
+{
+    if (editor.metroFlag && (editor.metroChannel > 0))
+    {
+        if ((ch->n_chanindex == (editor.metroChannel - 1)) && ((modEntry->row % editor.metroSpeed) == 0))
+        {
+            note->sample = 0x1F;
+            note->period = (((modEntry->row / editor.metroSpeed) % editor.metroSpeed) == 0) ? 160 : 214;
+        }
+    }
+}
+
+static void playVoice(moduleChannel_t *ch)
+{
+    uint8_t cmd;
+    moduleSample_t *s;
+    note_t note;
+
+    if (!ch->n_note && !ch->n_cmd)
+        paulaSetPeriod(ch->n_chanindex, ch->n_period);
+
+    note = modEntry->patterns[modPattern][(modEntry->row * AMIGA_VOICES) + ch->n_chanindex];
+    checkMetronome(ch, &note);
+
+    ch->n_note = note.period;
+    ch->n_cmd  = (note.command << 8) | note.param;
+
+    if ((note.sample >= 1) && (note.sample <= 31)) // SAFETY BUG FIX: don't handle sample-numbers >31
+    {
+        ch->n_samplenum = note.sample - 1;
+        s = &modEntry->samples[ch->n_samplenum];
+
+        ch->n_start    = &modEntry->sampleData[s->offset];
+        ch->n_finetune = s->fineTune;
+        ch->n_volume   = s->volume;
+        ch->n_length   = s->length;
+        ch->n_replen   = s->loopLength;
+
+        if (s->loopStart > 0)
+        {
+            ch->n_loopstart = &modEntry->sampleData[s->offset + s->loopStart];
+            ch->n_wavestart = ch->n_loopstart;
+            ch->n_length    = s->loopStart + ch->n_replen;
+        }
+        else
+        {
+            ch->n_loopstart = ch->n_start;
+            ch->n_wavestart = ch->n_start;
+        }
+    }
+
+    if (ch->n_note & 0x0FFF)
+    {
+        if ((ch->n_cmd & 0x0FF0) == 0x0E50) // set finetune
+        {
+            setFineTune(ch);
+            setPeriod(ch);
+        }
+        else
+        {
+            cmd = (ch->n_cmd & 0x0F00) >> 8;
+            if ((cmd == 0x03) || (cmd == 0x05))
+            {
+                setVUMeterHeight(ch);
+                setTonePorta(ch);
+                checkMoreEffects(ch);
+            }
+            else if (cmd == 0x09)
+            {
+                checkMoreEffects(ch);
+                setPeriod(ch);
+            }
+            else
+            {
+                setPeriod(ch);
+            }
+        }
+    }
+    else
+    {
+        checkMoreEffects(ch);
+    }
+}
+
 static void nextPosition(void)
 {
-    modEntry->row = pBreakPosition;
+    modEntry->row  = pBreakPosition;
     pBreakPosition = 0;
     posJumpAssert  = false;
 
@@ -1131,7 +850,8 @@ static void nextPosition(void)
             return;
         }
 
-        if (++modOrder >= modEntry->head.orderCount)
+        modOrder = (modOrder + 1) & 0x7F;
+        if (modOrder >= modEntry->head.orderCount)
         {
             modOrder = 0;
             modHasBeenPlayed = true;
@@ -1141,29 +861,44 @@ static void nextPosition(void)
         if (modPattern > (MAX_PATTERNS - 1))
             modPattern =  MAX_PATTERNS - 1;
 
-        if (!editor.isWAVRendering && !editor.isSMPRendering)
-        {
-            modEntry->currPattern = modPattern;
-
-            editor.currPatternDisp   = &modEntry->head.order[modOrder];
-            editor.currPosEdPattDisp = &modEntry->head.order[modOrder];
-
-            if (editor.ui.posEdScreenShown)
-                editor.ui.updatePosEd = true;
-
-            editor.ui.updateSongPos      = true;
-            editor.ui.updateSongPattern  = true;
-            editor.ui.updateCurrPattText = true;
-        }
+        updateUIPositions = true;
     }
 }
 
-int8_t processTick(void)
+int8_t intMusic(void)
 {
     uint8_t i;
+    int16_t *patt;
+    moduleChannel_t *c;
 
-    if (!editor.songPlaying)
-        return (false);
+    if (updateUIPositions)
+    {
+        updateUIPositions = false;
+
+        if (!editor.isWAVRendering && !editor.isSMPRendering)
+        {
+            if (editor.playMode != PLAY_MODE_PATTERN)
+            {
+                modEntry->currOrder   = modOrder;
+                modEntry->currPattern = modPattern;
+
+                patt = &modEntry->head.order[modOrder];
+                editor.currPatternDisp   = patt;
+                editor.currPosEdPattDisp = patt;
+                editor.currPatternDisp   = patt;
+                editor.currPosEdPattDisp = patt;
+
+                if (editor.ui.posEdScreenShown)
+                    editor.ui.updatePosEd = true;
+
+                editor.ui.updateSongPos      = true;
+                editor.ui.updateSongPattern  = true;
+                editor.ui.updateCurrPattText = true;
+            }
+
+            //editor.ui.updatePatternData = true;
+        }
+    }
 
     // PT quirk: CIA refreshes its timer values on the next interrupt, so do the real tempo change here
     if (setBPMFlag != 0)
@@ -1172,45 +907,8 @@ int8_t processTick(void)
         setBPMFlag = 0;
     }
 
-    if ((editor.isSMPRendering || editor.isWAVRendering) && modHasBeenPlayed)
-    {
-        modHasBeenPlayed = false;
-        return (false);
-    }
-
-    // EEx + Dxx/Bxx quirk simulation
-    if (editor.modTick == 0)
-    {
-        if (forceEffectsOff)
-        {
-            if (modEntry->row != pattBreakBugPos)
-            {
-                forceEffectsOff = false;
-                pattBreakBugPos = -1;
-            }
-        }
-    }
-
-    if (editor.isWAVRendering)
-    {
-        if (editor.modTick == 0)
-        {
-            if (modOrder < 0)
-                editor.rowVisitTable[((modEntry->head.orderCount - 1) * MOD_ROWS) + modEntry->row] = true;
-            else
-                editor.rowVisitTable[(modOrder * MOD_ROWS) + modEntry->row] = true;
-        }
-    }
-
-    for (i = 0; i < AMIGA_VOICES; ++i)
-        processChannel(&modEntry->channels[i]);
-
-    // EEx + Dxx/Bxx quirk simulation
-    if (editor.modTick == 0)
-    {
-        if (pattBreakFlag && pattDelayFlag)
-            forceEffectsOff = true;
-    }
+    if (editor.isWAVRendering && (editor.modTick == 0))
+        editor.rowVisitTable[(modOrder * MOD_ROWS) + modEntry->row] = true;
 
     if (!editor.stepPlayEnabled)
         editor.modTick++;
@@ -1218,8 +916,32 @@ int8_t processTick(void)
     if ((editor.modTick >= editor.modSpeed) || editor.stepPlayEnabled)
     {
         editor.modTick = 0;
-        pattBreakFlag  = false;
-        pattDelayFlag  = false;
+
+        if (!pattDelTime2)
+        {
+            for (i = 0; i < AMIGA_VOICES; ++i)
+            {
+                c = &modEntry->channels[i];
+
+                playVoice(c);
+                paulaSetVolume(i, c->n_volume);
+
+                // these take effect after the current DMA cycle is done
+                paulaSetData(i, c->n_loopstart);
+                paulaSetLength(i, c->n_replen);
+            }
+        }
+        else
+        {
+            for (i = 0; i < AMIGA_VOICES; ++i)
+                checkEffects(&modEntry->channels[i]);
+        }
+
+        if (!editor.isWAVRendering && !editor.isSMPRendering)
+        {
+            modEntry->currRow = modEntry->row;
+            editor.ui.updatePatternData = true;
+        }
 
         if (!editor.stepPlayBackwards)
         {
@@ -1227,23 +949,24 @@ int8_t processTick(void)
             modEntry->rowsCounter++;
         }
 
-        if (pattDelayTime > 0)
+        if (pattDelTime)
         {
-            pattDelayTime2 = pattDelayTime;
-            pattDelayTime  = 0;
+            pattDelTime2 = pattDelTime;
+            pattDelTime  = 0;
         }
 
-        if (pattDelayTime2 > 0)
+        if (pattDelTime2)
         {
-            if (--pattDelayTime2 > 0)
+            pattDelTime2--;
+            if (pattDelTime2)
                 modEntry->row--;
         }
 
         if (pBreakFlag)
         {
-            pBreakFlag = false;
             modEntry->row = pBreakPosition;
             pBreakPosition = 0;
+            pBreakFlag = 0;
         }
 
         if (editor.blockMarkFlag)
@@ -1254,6 +977,7 @@ int8_t processTick(void)
             doStopIt();
 
             modEntry->currRow = modEntry->row & 0x3F;
+            editor.ui.updatePatternData = true;
 
             editor.stepPlayEnabled      = false;
             editor.stepPlayBackwards    = false;
@@ -1265,65 +989,58 @@ int8_t processTick(void)
         if ((modEntry->row >= MOD_ROWS) || posJumpAssert)
         {
             if (editor.isSMPRendering)
-                return (false);
+                modHasBeenPlayed = true;
 
             nextPosition();
         }
 
-        if (editor.isWAVRendering && !pattDelayTime2 && editor.rowVisitTable[(modOrder * MOD_ROWS) + modEntry->row])
-        {
+        if (editor.isWAVRendering && !pattDelTime2 && editor.rowVisitTable[(modOrder * MOD_ROWS) + modEntry->row])
             modHasBeenPlayed = true;
-            return (false);
-        }
+    }
+    else
+    {
+        for (i = 0; i < AMIGA_VOICES; ++i)
+            checkEffects(&modEntry->channels[i]);
 
-        if (!editor.isWAVRendering && !editor.isSMPRendering)
-        {
-            modEntry->currRow = modEntry->row;
+        if (posJumpAssert)
+            nextPosition();
+    }
 
-            if (editor.playMode != PLAY_MODE_PATTERN)
-            {
-                modEntry->currOrder      = modOrder;
-                editor.currPatternDisp   = &modEntry->head.order[modOrder];
-                editor.currPosEdPattDisp = &modEntry->head.order[modOrder];
-            }
-
-            editor.ui.updatePatternData = true;
-        }
+    if ((editor.isSMPRendering || editor.isWAVRendering) && modHasBeenPlayed && (editor.modTick == (editor.modSpeed - 1)))
+    {
+        modHasBeenPlayed = false;
+        return (false);
     }
 
     return (true);
 }
 
+void modSetPattern(uint8_t pattern)
+{
+    modPattern = pattern;
+    modEntry->currPattern = modPattern;
+    editor.ui.updateCurrPattText = true;
+}
+
 void modSetPos(int16_t order, int16_t row)
 {
-    uint8_t i;
     int16_t posEdPos;
 
     if (row != -1)
     {
         row = CLAMP(row, 0, 63);
 
-        editor.modTick     = 0;
+        editor.modTick    = 0;
         modEntry->row     = (int8_t)(row);
         modEntry->currRow = (int8_t)(row);
-
-        pBreakPosition = 0;
-        posJumpAssert  = false;
     }
 
     if (order != -1)
     {
         if (order >= 0)
         {
-            for (i = 0; i < AMIGA_VOICES; ++i)
-            {
-                modEntry->channels[i].patternLoopRow  = 0;
-                modEntry->channels[i].pattLoopCounter = 0;
-            }
-
             modOrder = order;
             modEntry->currOrder = order;
-
             editor.ui.updateSongPos = true;
 
             if ((editor.currMode == MODE_PLAY) && (editor.playMode == PLAY_MODE_NORMAL))
@@ -1334,13 +1051,9 @@ void modSetPos(int16_t order, int16_t row)
 
                 modEntry->currPattern = modPattern;
                 editor.ui.updateCurrPattText = true;
-
-                pBreakPosition = 0;
-                posJumpAssert  = false;
             }
 
             editor.ui.updateSongPattern = true;
-
             editor.currPatternDisp = &modEntry->head.order[modOrder];
 
             posEdPos = modEntry->currOrder;
@@ -1358,14 +1071,6 @@ void modSetPos(int16_t order, int16_t row)
 
     if (editor.blockMarkFlag)
         editor.ui.updateStatusText = true;
-}
-
-void modSetSpeed(uint8_t speed)
-{
-    editor.modSpeed      = speed;
-    modEntry->currSpeed = speed;
-
-    editor.modTick = 0;
 }
 
 void modSetTempo(uint16_t bpm)
@@ -1401,47 +1106,21 @@ void modStop(void)
     moduleChannel_t *ch;
 
     editor.songPlaying = false;
+    turnOffVoices();
 
-    mixerKillAllVoices();
-
-    // don't reset sample, volume or command memory/flags
     for (i = 0; i < AMIGA_VOICES; ++i)
     {
         ch = &modEntry->channels[i];
 
-        ch->chanIndex          = i;
-        ch->command            = 0;
-        ch->fineTune           = 0;
-        ch->flags              = 0;
-        ch->noNote             = true;
-        ch->offset             = 0;
-        ch->offsetBugNotAdded  = true;
-        ch->param              = 0;
-        ch->pattLoopCounter    = 0;
-        ch->patternLoopRow     = 0;
-        ch->period             = 0;
-        // -- these two gets zeroed anyways --
-        ch->glissandoControl   = 0;
-        ch->waveControl        = 0;
-        // -----------------------------------
-        ch->scopeLoopQuirk_f   = 0.0;
-        ch->scopeEnabled       = false;
-        ch->scopeTrigger       = false;
-        ch->scopeLoopFlag      = false;
-        ch->scopeKeepDelta     = true;
-        ch->scopeKeepVolume    = true;
-        ch->tempFlags          = 0;
-        ch->tempFlagsBackup    = 0;
-        ch->tempPeriod         = 0;
+        ch->n_wavecontrol = 0;
+        ch->n_glissfunk   = 0;
+        ch->n_finetune    = 0;
+        ch->n_loopcount   = 0;
     }
 
-    tempFlags        = 0;
-    pattBreakBugPos  = -1;
-    pattBreakFlag    = false;
-    pattDelayFlag    = false;
-    forceEffectsOff  = false;
-    pattDelayTime    = 0;
-    pattDelayTime2   = 0;
+    pBreakFlag       = false;
+    pattDelTime      = 0;
+    pattDelTime2     = 0;
     pBreakPosition   = 0;
     posJumpAssert    = false;
     modHasBeenPlayed = true;
@@ -1449,28 +1128,25 @@ void modStop(void)
 
 void playPattern(int8_t startRow)
 {
-    uint8_t i;
-
-    for (i = 0; i < AMIGA_VOICES; ++i)
-        modEntry->channels[i].chanIndex = i;
-
-    modEntry->row     = startRow & 0x3F;
-    modEntry->currRow = modEntry->row;
+    modEntry->row      = startRow & 0x3F;
+    modEntry->currRow  = modEntry->row;
     editor.modTick     = 0;
-    tempFlags          = 0;
     editor.playMode    = PLAY_MODE_PATTERN;
     editor.currMode    = MODE_PLAY;
+    editor.didQuantize = false;
 
     if (!editor.stepPlayEnabled)
         pointerSetMode(POINTER_MODE_PLAY, DO_CARRY);
 
     editor.songPlaying = true;
+    mixerClearSampleCounter();
 }
 
 void incPatt(void)
 {
     if (++modPattern > (MAX_PATTERNS - 1))
           modPattern = 0;
+
     modEntry->currPattern = modPattern;
 
     editor.ui.updatePatternData  = true;
@@ -1481,6 +1157,7 @@ void decPatt(void)
 {
     if (--modPattern < 0)
           modPattern = MAX_PATTERNS - 1;
+
     modEntry->currPattern = modPattern;
 
     editor.ui.updatePatternData  = true;
@@ -1489,8 +1166,7 @@ void decPatt(void)
 
 void modPlay(int16_t patt, int16_t order, int8_t row)
 {
-    uint8_t i;
-    moduleChannel_t *ch;
+    uint8_t oldPlayMode, oldMode;
 
     if (row != -1)
     {
@@ -1541,36 +1217,14 @@ void modPlay(int16_t patt, int16_t order, int8_t row)
     editor.currPatternDisp   = &modEntry->head.order[modOrder];
     editor.currPosEdPattDisp = &modEntry->head.order[modOrder];
 
-    mixerKillAllVoices();
+    oldPlayMode = editor.playMode;
+    oldMode     = editor.currMode;
 
-    for (i = 0; i < AMIGA_VOICES; ++i)
-    {
-        ch = &modEntry->channels[i];
+    doStopIt();
+    turnOffVoices();
 
-        ch->chanIndex         = i;
-        ch->fineTune          = 0;
-        ch->flags             = 0;
-        ch->noNote            = true;
-        ch->period            = 0;
-        ch->sample            = 0;
-        ch->wantedperiod      = 0;
-        ch->offset            = 0;
-        ch->volume            = 0;
-        ch->offsetBugNotAdded = true;
-        ch->pattLoopCounter   = 0;
-        ch->glissandoControl  = 0;
-        ch->waveControl       = 0;
-        ch->scopeLoopQuirk_f  = 0.0;
-        ch->scopeEnabled      = false;
-        ch->scopeTrigger      = false;
-        ch->scopeLoopFlag     = false;
-        ch->scopeKeepDelta    = true;
-        ch->scopeKeepVolume   = true;
-        ch->tempFlags         = 0;
-        ch->tempFlagsBackup   = 0;
-        ch->tempPeriod        = 0;
-        ch->didQuantize       = false;
-    }
+    editor.playMode = oldPlayMode;
+    editor.currMode = oldMode;
 
     if (editor.playMode == PLAY_MODE_NORMAL)
     {
@@ -1578,21 +1232,10 @@ void modPlay(int16_t patt, int16_t order, int8_t row)
         editor.playTime  = 0;
     }
 
-    tempFlags          = 0;
-    tempPeriod         = 0;
-    pBreakFlag         = false;
-    posJumpAssert      = false;
-    pattDelayTime      = 0;
-    posJumpAssert      = false;
-    pattBreakFlag      = false;
-    pattDelayFlag      = false;
-    pattDelayTime2     = 0;
-    pBreakPosition     = 0;
-    editor.modTick     = 0;
-    pattBreakBugPos    = -1;
-    forceEffectsOff    = false;
+    editor.modTick     = editor.modSpeed;
     modHasBeenPlayed   = false;
     editor.songPlaying = true;
+    editor.didQuantize = false;
 
     if (!editor.isSMPRendering && !editor.isWAVRendering)
     {
@@ -1609,10 +1252,11 @@ void modPlay(int16_t patt, int16_t order, int8_t row)
 void clearSong(void)
 {
     uint8_t i;
+    moduleChannel_t *ch;
 
     if (modEntry != NULL)
     {
-        memset(editor.ui.pattNames,         0, MAX_PATTERNS * 16);
+        memset(editor.ui.pattNames,        0, MAX_PATTERNS * 16);
         memset(modEntry->head.order,       0, sizeof (modEntry->head.order));
         memset(modEntry->head.moduleTitle, 0, sizeof (modEntry->head.moduleTitle));
 
@@ -1643,11 +1287,12 @@ void clearSong(void)
 
         for (i = 0; i < AMIGA_VOICES; ++i)
         {
-            modEntry->channels[i].fineTune         = 0;
-            modEntry->channels[i].waveControl      = 0;
-            modEntry->channels[i].pattLoopCounter  = 0;
-            modEntry->channels[i].invertLoopSpeed  = 0;
-            modEntry->channels[i].glissandoControl = 0;
+            ch = &modEntry->channels[i];
+
+            ch->n_wavecontrol = 0;
+            ch->n_glissfunk   = 0;
+            ch->n_finetune    = 0;
+            ch->n_loopcount   = 0;
         }
 
         modSetPos(0, 0); // this also refreshes pattern data
@@ -1663,7 +1308,6 @@ void clearSong(void)
         setLEDFilter(false); // real PT doesn't do this there, but that's insane
 
         editor.ui.updateSongSize = true;
-
         updateWindowTitle(MOD_IS_MODIFIED);
     }
 }
@@ -1671,18 +1315,21 @@ void clearSong(void)
 void clearSamples(void)
 {
     uint8_t i;
+    moduleSample_t *s;
 
     if (modEntry != NULL)
     {
         for (i = 0; i < MOD_SAMPLES; ++i)
         {
-            modEntry->samples[i].fineTune   = 0;
-            modEntry->samples[i].length     = 0;
-            modEntry->samples[i].loopLength = 2;
-            modEntry->samples[i].loopStart  = 0;
-            modEntry->samples[i].volume     = 0;
+            s = &modEntry->samples[i];
 
-            memset(modEntry->samples[i].text, 0, sizeof (modEntry->samples[i].text));
+            s->fineTune   = 0;
+            s->length     = 0;
+            s->loopLength = 2;
+            s->loopStart  = 0;
+            s->volume     = 0;
+
+            memset(s->text, 0, sizeof (s->text));
         }
 
         memset(modEntry->sampleData, 0, MOD_SAMPLES * MAX_SAMPLE_LEN);
@@ -1756,7 +1403,8 @@ void restartSong(void) // for the beginning of MOD2WAV/PAT2SMP
     }
     else
     {
-        modEntry->currBPM = 125;
+        modEntry->currSpeed = 6;
+        modEntry->currBPM   = 125;
         modSetSpeed(6);
         modSetTempo(125);
 
@@ -1767,7 +1415,8 @@ void restartSong(void) // for the beginning of MOD2WAV/PAT2SMP
 // this function is meant for the end of MOD2WAV/PAT2SMP
 void resetSong(void) // only call this after storeTempVariables() has been called!
 {
-    int8_t i;
+    uint8_t i;
+    moduleChannel_t *ch;
 
     modStop();
 
@@ -1775,7 +1424,7 @@ void resetSong(void) // only call this after storeTempVariables() has been calle
     editor.playMode    = PLAY_MODE_NORMAL;
     editor.currMode    = MODE_IDLE;
 
-    mixerKillAllVoices();
+    turnOffVoices();
 
     memset((int8_t *)(editor.vuMeterVolumes),    0, sizeof (editor.vuMeterVolumes));
     memset((float  *)(editor.realVuMeterVolumes),0, sizeof (editor.realVuMeterVolumes));
@@ -1783,7 +1432,14 @@ void resetSong(void) // only call this after storeTempVariables() has been calle
 
     memset(modEntry->channels, 0, sizeof (modEntry->channels));
     for (i = 0; i < AMIGA_VOICES; ++i)
-        modEntry->channels[i].chanIndex = i;
+    {
+        ch = &modEntry->channels[i];
+
+        ch->n_chanindex = i;
+        ch->n_start     = NULL;
+        ch->n_wavestart = NULL;
+        ch->n_loopstart = NULL;
+    }
 
     modOrder   = oldOrder;
     modPattern = oldPattern;
@@ -1802,17 +1458,9 @@ void resetSong(void) // only call this after storeTempVariables() has been calle
     modSetSpeed(oldSpeed);
     modSetTempo(oldBPM);
 
+    doStopIt();
+
     editor.modTick   = 0;
-    tempFlags        = 0;
-    pBreakPosition   = 0;
-    posJumpAssert    = false;
-    pattBreakBugPos  = -1;
-    pattBreakFlag    = false;
-    pattDelayFlag    = false;
-    forceEffectsOff  = false;
-    pattDelayTime    = 0;
-    pattDelayTime2   = 0;
-    pBreakFlag       = false;
     modHasBeenPlayed = false;
     forceMixerOff    = false;
 }

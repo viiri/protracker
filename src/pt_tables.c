@@ -75,7 +75,7 @@ const uint8_t vibratoTable[32] =
     0xB4, 0xA1, 0x8D, 0x78, 0x61, 0x4A, 0x31, 0x18
 };
 
-uint16_t periodTable[606] =
+const int16_t periodTable[606] =
 {
     856,808,762,720,678,640,604,570,538,508,480,453,
     428,404,381,360,339,320,302,285,269,254,240,226,
@@ -126,7 +126,7 @@ uint16_t periodTable[606] =
     431,407,384,363,342,323,305,288,272,256,242,228,
     216,203,192,181,171,161,152,144,136,128,121,114,0,
 
-    // PT BUGFIX: overflowing arpeggio on -1 finetuned samples, add extra zeroes.
+    // PT BUGFIX: overflowing arpeggio on -1 finetuned samples, add extra zeroes
     0,0,0,0,0,0,0,0,0,0,0,0,0,0
 };
 

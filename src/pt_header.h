@@ -45,6 +45,7 @@
 
 #define AMIGA_VOICES 4
 #define SCOPE_WIDTH 40
+#define MONOSCOPE_WIDTH 197
 #define SPECTRUM_BAR_NUM 23
 #define SPECTRUM_BAR_HEIGHT 36
 #define SPECTRUM_BAR_WIDTH 6
@@ -244,19 +245,13 @@ typedef struct moduleSample_t
 
 typedef struct moduleChannel_t
 {
-    int8_t scopeVolume;
-    double scopeReadDelta_f, scopeDrawDelta_f, scopePos_f;
-    int8_t *invertLoopPtr, *invertLoopStart, volume, noNote, rawVolume;
-    int8_t scopeEnabled, scopeTrigger, scopeLoopFlag, patternLoopRow;
-    int8_t scopeChangePos, scopeKeepDelta, scopeKeepVolume, offsetBugNotAdded;
-    int8_t pattLoopCounter, tonePortDirec, didQuantize;
-    uint8_t param, flags, sample, command, fineTune, chanIndex, tempFlags;
-    uint8_t tremoloCmd, vibratoCmd, tremoloPos, vibratoPos, waveControl;
-    uint8_t tonePortSpeed, invertLoopDelay, invertLoopSpeed, tempFlagsBackup, glissandoControl;
-    uint16_t period, wantedperiod, tempPeriod;
-    int32_t offset, offsetTemp, invertLoopLength, scopeLoopQuirk;
-    int32_t scopeEnd, scopeLoopBegin, scopeLoopEnd;
-    double scopeLoopQuirk_f, scopeEnd_f, scopeLoopBegin_f, scopeLoopEnd_f;
+    int8_t *n_start, *n_wavestart, *n_loopstart, n_chanindex, n_volume;
+    int8_t n_toneportdirec, n_vibratopos, n_tremolopos, n_pattpos, n_loopcount;
+    uint8_t n_wavecontrol, n_glissfunk, n_sampleoffset, n_toneportspeed;
+    uint8_t n_vibratocmd, n_tremolocmd, n_finetune, n_funkoffset, n_samplenum;
+    int16_t n_period, n_note, n_wantedperiod;
+    uint16_t n_cmd;
+    uint32_t n_length, n_replen;
 } moduleChannel_t;
 
 typedef struct module_t
@@ -305,6 +300,7 @@ struct editor_t
     volatile int8_t *currSampleDisp;
     volatile uint8_t isWAVRendering;
     volatile uint8_t isSMPRendering;
+    volatile uint8_t smpRenderingDone;
     volatile uint8_t modTick;
     volatile uint8_t modSpeed;
     volatile uint8_t programRunning;
@@ -324,6 +320,8 @@ struct editor_t
     volatile int32_t *lpCutOffDisp;
     volatile int32_t *hpCutOffDisp;
 
+    int8_t blankSample[320]; // for scopes
+
     char mixText[16], outOfMemoryText[18], modLoadOoMText[39], diskOpListOoMText[42];
     char allRightText[10], *entryNameTmp, *currPath;
     UNICHAR *fileNameTmp, *currPathU;
@@ -337,7 +335,7 @@ struct editor_t
     int8_t accidental, transDelFlag, chordLengthMin;
     uint8_t muted[AMIGA_VOICES], *rowVisitTable, playMode, songPlaying, currMode, useLEDFilter;
     uint8_t tuningFlag, pNoteFlag, tuningVol, errorMsgCounter, stepPlayEnabled, stepPlayBackwards;
-    uint8_t blockBufferFlag, buffFromPos, buffToPos, blockFromPos, blockToPos, blockMarkFlag;
+    uint8_t blockBufferFlag, buffFromPos, buffToPos, blockFromPos, blockToPos, blockMarkFlag, didQuantize;
     uint8_t timingMode, swapChannelFlag, f6Pos, f7Pos, f8Pos, f9Pos, f10Pos, keyOctave, tuningNote;
     uint8_t resampleNote, initialTempo, initialSpeed, editMoveAdd, configFound, abortMod2Wav, blepSynthesis;
 
@@ -466,6 +464,7 @@ void audioClose(void);
 void clearSong(void);
 void clearSamples(void);
 void clearAll(void);
+void modSetPattern(uint8_t pattern);
 
 extern uint8_t bigEndian; // pt_main.c
 extern module_t *modEntry; // pt_main.c

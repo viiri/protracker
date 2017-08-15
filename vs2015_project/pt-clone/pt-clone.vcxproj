@@ -162,6 +162,7 @@
     <ClInclude Include="..\..\src\pt_patternviewer.h" />
     <ClInclude Include="..\..\src\pt_sampleloader.h" />
     <ClInclude Include="..\..\src\pt_sampler.h" />
+    <ClInclude Include="..\..\src\pt_scopes.h" />
     <ClInclude Include="..\..\src\pt_tables.h" />
     <ClInclude Include="..\..\src\pt_terminal.h" />
     <ClInclude Include="..\..\src\pt_textout.h" />
@@ -182,6 +183,7 @@
     <ClCompile Include="..\..\src\pt_patternviewer.c" />
     <ClCompile Include="..\..\src\pt_sampleloader.c" />
     <ClCompile Include="..\..\src\pt_sampler.c" />
+    <ClCompile Include="..\..\src\pt_scopes.c" />
     <ClCompile Include="..\..\src\pt_tables.c" />
     <ClCompile Include="..\..\src\pt_textout.c" />
   </ItemGroup>

@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+// aciddose says:
 // information on blep variables
 //
 // ZC = zero crossings, the number of ripples in the impulse

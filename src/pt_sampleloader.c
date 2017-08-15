@@ -207,7 +207,7 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
     sampleLength = dataLen;
     // ---------------------------
 
-    if ((sampleRate == 0) || (sampleLength == 0) || (sampleLength >= filesize))
+    if ((sampleRate == 0) || (sampleLength == 0) || (sampleLength >= (filesize * (bitsPerSample / 8))))
     {
         displayErrorMsg("WAV CORRUPT !");
         terminalPrintf("WAV sample loading failed: corrupt WAV file\n");
@@ -332,7 +332,7 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
         if (sampleLength > MAX_SAMPLE_LEN)
             sampleLength = MAX_SAMPLE_LEN;
 
-        mixerKillVoiceIfReadingSample(editor.currSample);
+        turnOffVoices();
         for (i = 0; i < MAX_SAMPLE_LEN; ++i)
         {
             if (i <= (sampleLength & 0xFFFFFFFE))
@@ -406,7 +406,7 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
 
         normalize16bitSigned(audioDataS16, sampleLength);
 
-        mixerKillVoiceIfReadingSample(editor.currSample);
+        turnOffVoices();
         for (i = 0; i < MAX_SAMPLE_LEN; ++i)
         {
             if (i <= (sampleLength & 0xFFFFFFFE))
@@ -477,7 +477,7 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
 
         normalize24bitSigned(audioDataS32, sampleLength);
 
-        mixerKillVoiceIfReadingSample(editor.currSample);
+        turnOffVoices();
         for (i = 0; i < MAX_SAMPLE_LEN; ++i)
         {
             if (i <= (sampleLength & 0xFFFFFFFE))
@@ -545,7 +545,7 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
 
         normalize32bitSigned(audioDataS32, sampleLength);
 
-        mixerKillVoiceIfReadingSample(editor.currSample);
+        turnOffVoices();
         for (i = 0; i < MAX_SAMPLE_LEN; ++i)
         {
             if (i <= (sampleLength & 0xFFFFFFFE))
@@ -620,7 +620,7 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
 
         normalize8bitFloatSigned(audioDataFloat, sampleLength);
 
-        mixerKillVoiceIfReadingSample(editor.currSample);
+        turnOffVoices();
         for (i = 0; i < MAX_SAMPLE_LEN; ++i)
         {
             if (i <= (sampleLength & 0xFFFFFFFE))
@@ -730,7 +730,13 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
     editor.sampleZero = false;
     editor.samplePos  = 0;
 
-    updateVoiceParams();
+    // fix beep on non-looping sample (clear first two bytes)
+    if ((s->length >= 2) && ((s->loopStart + s->loopLength) <= 2))
+    {
+        modEntry->sampleData[s->offset + 0] = 0;
+        modEntry->sampleData[s->offset + 1] = 0;
+    }
+
     updateCurrSample();
     fillSampleRedoBuffer(editor.currSample);
 
@@ -926,7 +932,7 @@ int8_t loadIFFSample(UNICHAR *fileName, char *entryName)
         sampleLoopLength = 2;
     }
 
-    mixerKillVoiceIfReadingSample(editor.currSample);
+    turnOffVoices();
     memset(modEntry->sampleData + s->offset, 0, MAX_SAMPLE_LEN);
 
     fseek(f, bodyPtr, SEEK_SET);
@@ -1001,7 +1007,13 @@ int8_t loadIFFSample(UNICHAR *fileName, char *entryName)
     editor.sampleZero = false;
     editor.samplePos  = 0;
 
-    updateVoiceParams();
+    // fix beep on non-looping sample (clear first two bytes)
+    if ((s->length >= 2) && ((s->loopStart + s->loopLength) <= 2))
+    {
+        modEntry->sampleData[s->offset + 0] = 0;
+        modEntry->sampleData[s->offset + 1] = 0;
+    }
+
     updateCurrSample();
     fillSampleRedoBuffer(editor.currSample);
 
@@ -1037,7 +1049,7 @@ int8_t loadRAWSample(UNICHAR *fileName, char *entryName)
     if (fileSize > MAX_SAMPLE_LEN)
         fileSize = MAX_SAMPLE_LEN;
 
-    mixerKillVoiceIfReadingSample(editor.currSample);
+    turnOffVoices();
 
     memset(modEntry->sampleData + s->offset, 0, MAX_SAMPLE_LEN);
     fread(modEntry->sampleData + s->offset, 1, fileSize, f);
@@ -1061,7 +1073,13 @@ int8_t loadRAWSample(UNICHAR *fileName, char *entryName)
     editor.sampleZero = false;
     editor.samplePos  = 0;
 
-    updateVoiceParams();
+    // fix beep on non-looping sample (clear first two bytes)
+    if (s->length >= 2)
+    {
+        modEntry->sampleData[s->offset + 0] = 0;
+        modEntry->sampleData[s->offset + 1] = 0;
+    }
+
     updateCurrSample();
     fillSampleRedoBuffer(editor.currSample);
 

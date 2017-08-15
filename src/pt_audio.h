@@ -28,17 +28,20 @@ void toggleLEDFilter(void);
 int8_t renderToWav(char *fileName, int8_t checkIfFileExist);
 void toggleAmigaPanMode(void);
 void toggleLowPassFilter(void);
-void updateVoiceParams(void);
-void mixerSwapVoiceSource(uint8_t ch, const int8_t *src, int32_t length, int32_t loopStart, int32_t loopLength, int32_t newSampleOffset);
-void mixerSetVoiceSource(uint8_t ch, const int8_t *src, int32_t length, int32_t loopStart, int32_t loopLength, int32_t offset);
-void mixerSetVoiceOffset(uint8_t ch, int32_t offset);
-void mixerSetVoiceVol(uint8_t ch, int8_t vol);
-void mixerSetVoiceDelta(uint8_t ch, uint16_t period);
+
+void paulaRestartDMA(uint8_t ch);
+void paulaSetPeriod(uint8_t ch, uint16_t period);
+void paulaSetVolume(uint8_t ch, int8_t vol);
+void paulaSetLength(uint8_t ch, uint32_t len);
+void paulaSetData(uint8_t ch, const int8_t *src);
+
+void clearPaulaAndScopes(void);
+void mixerUpdateLoops(void);
 void mixerKillVoice(uint8_t ch);
-void mixerKillAllVoices(void);
-void mixerKillVoiceIfReadingSample(uint8_t sample);
+void turnOffVoices(void);
 void mixerCalcVoicePans(uint8_t stereoSeparation);
 void mixerSetSamplesPerTick(int32_t val);
 void mixerClearSampleCounter(void);
+void outputAudio(int16_t *target, int32_t numSamples);
 
 #endif

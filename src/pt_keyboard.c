@@ -466,20 +466,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
     // GENERAL KEYS
     switch (keyEntry)
     {
-        case SDL_SCANCODE_NONUSBACKSLASH: // magic "kill all voices" button
-        {
-            for (i = 0; i < AMIGA_VOICES; ++i)
-            {
-                // shutdown scope
-                modEntry->channels[i].scopeLoopQuirk_f = 0.0;
-                modEntry->channels[i].scopeEnabled     = false;
-                modEntry->channels[i].scopeTrigger     = false;
-
-                // shutdown voice
-                mixerKillVoice(i);
-            }
-        }
-        break;
+        case SDL_SCANCODE_NONUSBACKSLASH: turnOffVoices(); break; // magic "kill all voices" button
 
         case SDL_SCANCODE_APOSTROPHE:
         {
@@ -3155,11 +3142,10 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
 
                     for (i = 0; i < AMIGA_VOICES; ++i)
                     {
-                        modEntry->channels[i].waveControl      = 0;
-                        modEntry->channels[i].glissandoControl = 0;
-                        modEntry->channels[i].invertLoopSpeed  = 0;
-                        modEntry->channels[i].fineTune         = 0;
-                        modEntry->channels[i].pattLoopCounter  = 0;
+                        modEntry->channels[i].n_wavecontrol = 0;
+                        modEntry->channels[i].n_glissfunk   = 0;
+                        modEntry->channels[i].n_finetune    = 0;
+                        modEntry->channels[i].n_loopcount   = 0;
                     }
 
                     displayMsg("EFX RESTORED !");
@@ -4494,10 +4480,10 @@ int8_t handleTextEditMode(SDL_Scancode keyEntry)
             }
         }
 
-        return (false); /* don't continue further key handling */
+        return (false); // don't continue further key handling
     }
 
-    return (true); /* continue further key handling (we're not editing text) */
+    return (true); // continue further key handling (we're not editing text)
 }
 
 void handleTerminalKeys(SDL_Scancode keyEntry)

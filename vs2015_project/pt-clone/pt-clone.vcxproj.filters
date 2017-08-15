@@ -19,6 +19,7 @@
     <ClCompile Include="..\..\src\pt_patternviewer.c" />
     <ClCompile Include="..\..\src\pt_sampleloader.c" />
     <ClCompile Include="..\..\src\pt_sampler.c" />
+    <ClCompile Include="..\..\src\pt_scopes.c" />
     <ClCompile Include="..\..\src\pt_tables.c" />
     <ClCompile Include="..\..\src\pt_textout.c" />
     <ClCompile Include="..\..\src\gfx\pt_gfx_aboutscreen.c">
@@ -126,6 +127,9 @@
       <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\pt_sampler.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\pt_scopes.h">
       <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\pt_tables.h">

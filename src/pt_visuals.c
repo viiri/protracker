@@ -17,6 +17,7 @@
 #include "pt_visuals.h"
 #include "pt_helpers.h"
 #include "pt_terminal.h"
+#include "pt_scopes.h"
 
 typedef struct sprite_t
 {
@@ -42,11 +43,10 @@ sprite_t sprites[SPRITE_NUM];
 static uint32_t vuMetersBg[4 * (10 * 48)];
 // -------------------------
 
-int8_t processTick(void);                     // pt_modplayer.c
-void outputAudioToSample(int32_t numSamples); // pt_audio.c
-extern int32_t samplesPerTick;                // pt_audio.c
-void storeTempVariables(void);                // pt_modplayer.c
-uint8_t getSongProgressInPercentage(void);    // pt_modplayer.c
+int8_t intMusic(void);                     // pt_modplayer.c
+extern int32_t samplesPerTick;             // pt_audio.c
+void storeTempVariables(void);             // pt_modplayer.c
+uint8_t getSongProgressInPercentage(void); // pt_modplayer.c
 void updateSongInfo1(void);
 void updateSongInfo2(void);
 void updateSampler(void);
@@ -179,7 +179,7 @@ void renderVuMeters(void)
 
     fillToVuMetersBgBuffer();
 
-    if (!editor.ui.samplerScreenShown && !editor.ui.terminalShown)
+    if (!editor.ui.samplerScreenShown && !editor.ui.terminalShown && !editor.isWAVRendering && !editor.isSMPRendering)
     {
         for (i = 0; i < AMIGA_VOICES; ++i)
         {
@@ -1105,102 +1105,19 @@ void updateDragBars(void)
 
 void updateVisualizer(void)
 {
-    int8_t tmpSmp8;
-    uint8_t i,  y, totalVoicesActive;
-    int16_t scopeData;
-    const int16_t mixScaleTable[AMIGA_VOICES] = { 388, 570, 595, 585 };
-    uint16_t x;
-    int32_t newPos, tmpVol, chNum, scopeBuffer[200 - 3], scopeTemp;
+    uint8_t i, y;
+    int32_t tmpVol;
     const uint32_t *ptr32Src;
-    uint32_t *ptr32Dst, *scopePtr, pixel;
-    float scopePos_f;
-    moduleChannel_t *ch;
+    uint32_t *ptr32Dst, pixel;
 
     if (!editor.ui.diskOpScreenShown && !editor.ui.posEdScreenShown &&
         !editor.ui.editOpScreenShown && !editor.ui.aboutScreenShown &&
         !editor.ui.disableVisualizer && !editor.ui.askScreenShown   &&
         !editor.isWAVRendering       && !editor.ui.terminalShown)
     {
-        if (editor.ui.visualizerMode == VISUAL_QUADRASCOPE)
-        {
-            // quadrascope
-
-            scopePtr = pixelBuffer + ((71 * SCREEN_W) + 128);
-
-            i = AMIGA_VOICES;
-            while (i--)
-            {
-                chNum = (AMIGA_VOICES - 1) - i;
-                ch = &modEntry->channels[chNum];
-
-                // clear background
-                ptr32Src = trackerFrameBMP  + ((71 * SCREEN_W) + 128);
-                ptr32Dst = pixelBuffer + ((55 * SCREEN_W) + (128 + (chNum * (SCOPE_WIDTH + 8))));
-                y = 33;
-                while (y--)
-                {
-                    memcpy(ptr32Dst, ptr32Src, SCOPE_WIDTH * sizeof (int32_t));
-                    ptr32Dst += SCREEN_W;
-                }
-
-                // render scopes
-
-                scopePos_f = ch->scopePos_f;
-
-                x = SCOPE_WIDTH;
-                while (x--)
-                {
-                    if (editor.muted[chNum] || !ch->scopeEnabled || !ch->period)
-                    {
-                        scopePtr[x] = palette[PAL_QADSCP];
-                    }
-                    else
-                    {
-                        newPos = (int32_t)(scopePos_f); // don't round here, truncate instead!
-
-                        if (ch->scopeLoopFlag)
-                        {
-                            if (newPos >= ch->scopeLoopEnd)
-                                 newPos = ch->scopeLoopBegin + ((newPos - ch->scopeLoopBegin) % (ch->scopeLoopEnd - ch->scopeLoopBegin));
-                        }
-                        else
-                        {
-                            if (newPos >= ch->scopeEnd)
-                            {
-                                scopePtr[x] = palette[PAL_QADSCP];
-                                continue;
-                            }
-                        }
-
-                        newPos = CLAMP(newPos, 0, (MAX_SAMPLE_LEN * 31) - 1);
-
-                        if (modEntry->sampleData != NULL)
-                            tmpSmp8 = modEntry->sampleData[newPos];
-                        else
-                            tmpSmp8 = 0;
-
-                        scopeData = tmpSmp8 * ch->scopeVolume;
-
-                        // "arithmetic shift right" on signed number simulation
-                        if (scopeData < 0)
-                            scopeData = 0xFF80 | ((uint16_t)(scopeData) >> 9); // 0xFF80 = 2^16 - 2^(16-9)
-                        else
-                            scopeData /= (1 << 9);
-
-                        scopeData = CLAMP(scopeData, -32, 32);
-                        scopePtr[(scopeData * SCREEN_W) + x] = palette[PAL_QADSCP];
-
-                        scopePos_f += ch->scopeDrawDelta_f;
-                    }
-                }
-
-                scopePtr += (SCOPE_WIDTH + 8);
-            }
-        }
-        else if (editor.ui.visualizerMode == VISUAL_SPECTRUM)
+        if (editor.ui.visualizerMode == VISUAL_SPECTRUM)
         {
             // spectrum analyzer
-
             for (i = 0; i < SPECTRUM_BAR_NUM; ++i)
             {
                 ptr32Src = spectrumAnaBMP + (SPECTRUM_BAR_HEIGHT - 1);
@@ -1212,104 +1129,23 @@ void updateVisualizer(void)
                 while (y--)
                 {
                     if (y < tmpVol)
-                    {
-                        *(ptr32Dst + 0) = *ptr32Src;
-                        *(ptr32Dst + 1) = *ptr32Src;
-                        *(ptr32Dst + 2) = *ptr32Src;
-                        *(ptr32Dst + 3) = *ptr32Src;
-                        *(ptr32Dst + 4) = *ptr32Src;
-                        *(ptr32Dst + 5) = *ptr32Src;
-                    }
-                    else
-                    {
-                        *(ptr32Dst + 0) = pixel;
-                        *(ptr32Dst + 1) = pixel;
-                        *(ptr32Dst + 2) = pixel;
-                        *(ptr32Dst + 3) = pixel;
-                        *(ptr32Dst + 4) = pixel;
-                        *(ptr32Dst + 5) = pixel;
-                    }
+                        pixel  = *ptr32Src;
 
-                    ptr32Src--;
+                    *(ptr32Dst + 0) = pixel;
+                    *(ptr32Dst + 1) = pixel;
+                    *(ptr32Dst + 2) = pixel;
+                    *(ptr32Dst + 3) = pixel;
+                    *(ptr32Dst + 4) = pixel;
+                    *(ptr32Dst + 5) = pixel;
+
+                    --ptr32Src;
                     ptr32Dst += SCREEN_W;
                 }
             }
         }
         else
         {
-            // monoscope
-
-            // clear background (should be optimized somehow...)
-            ptr32Src = monoScopeBMP + (11 * 200);
-            ptr32Dst = pixelBuffer  + (55 * SCREEN_W) + 120;
-            y = 44;
-            while (y--)
-            {
-                memcpy(ptr32Dst, ptr32Src, 197 * sizeof (int32_t));
-                ptr32Dst += SCREEN_W;
-            }
-
-            // mix channels
-
-            memset(scopeBuffer, 0, sizeof (scopeBuffer));
-
-            totalVoicesActive = 0;
-            for (i = 0; i < AMIGA_VOICES; ++i)
-            {
-                ch = &modEntry->channels[i];
-
-                if (!editor.muted[ch->chanIndex] && ch->scopeEnabled && ch->period)
-                {
-                    scopePos_f = ch->scopePos_f;
-                    for (x = 0; x < (200 - 3); ++x)
-                    {
-                        newPos = (int32_t)(scopePos_f); // don't round here, truncate!
-
-                        if (ch->scopeLoopFlag)
-                        {
-                            if (newPos >= ch->scopeLoopEnd)
-                            {
-                                newPos = ch->scopeLoopBegin + ((newPos - ch->scopeLoopBegin) % (ch->scopeLoopEnd - ch->scopeLoopBegin));
-
-                                     if (newPos < ch->scopeLoopBegin) newPos = ch->scopeLoopBegin;
-                                else if (newPos > ch->scopeLoopEnd)   newPos = ch->scopeLoopBegin;
-                            }
-                        }
-                        else
-                        {
-                            if (newPos >= ch->scopeEnd)
-                                break;
-                        }
-
-                        if (newPos >= ((MAX_SAMPLE_LEN * 31) - 1))
-                            break;
-
-                        if (modEntry->sampleData != NULL)
-                            tmpSmp8 = modEntry->sampleData[newPos];
-                        else
-                            tmpSmp8 = 0;
-
-                        scopeBuffer[x] += (tmpSmp8 * ch->scopeVolume);
-
-                        scopePos_f += (ch->scopeDrawDelta_f);
-                    }
-
-                    totalVoicesActive++;
-                }
-            }
-
-            // render buffer
-
-            for (x = 0; x < (200 - 3); ++x)
-            {
-                scopeTemp = scopeBuffer[x];
-                if ((scopeTemp != 0) && (totalVoicesActive > 0))
-                    scopeTemp = (55 + 21) + CLAMP(scopeTemp / mixScaleTable[totalVoicesActive - 1], -21, 22);
-                else
-                    scopeTemp =  55 + 21;
-
-                pixelBuffer[(scopeTemp * SCREEN_W) + (120 + x)] = palette[PAL_QADSCP];
-            }
+            drawScopes();
         }
     }
 }
@@ -1321,7 +1157,7 @@ void renderQuadrascopeBg(void)
     uint32_t *ptr32Dst;
 
     ptr32Src = trackerFrameBMP  + (44 * SCREEN_W) + 120;
-    ptr32Dst = pixelBuffer + (44 * SCREEN_W) + 120;
+    ptr32Dst = pixelBuffer      + (44 * SCREEN_W) + 120;
 
     y = 55;
     while (y--)
@@ -2031,25 +1867,17 @@ void handleAskYes(void)
             mixerSetSamplesPerTick((int32_t)((tmpFloat / (float)(modEntry->currBPM)) + 0.5f));
 
             editor.pat2SmpPos = 0;
-            while (editor.isSMPRendering)
+
+            editor.smpRenderingDone = false;
+            while (!editor.smpRenderingDone)
             {
-                // process tick
-                if (editor.songPlaying)
-                {
-                    if (!processTick())
-                        editor.songPlaying = false;
-                }
-                else
-                {
-                    resetSong();
-                    editor.isSMPRendering = false;
+                if (intMusic() == false)
+                    editor.smpRenderingDone = true;
 
-                    break; // rendering is done
-                }
-
-                // output tick to sample
-                outputAudioToSample(samplesPerTick);
+                outputAudio(NULL, samplesPerTick);
             }
+            editor.isSMPRendering = false;
+            resetSong();
 
             // set back old row and samplesPerTick
             modEntry->row = oldRow;
@@ -2199,7 +2027,7 @@ void handleAskYes(void)
             if (newLength < 2)
                 return;
 
-            mixerKillVoiceIfReadingSample(editor.currSample);
+            turnOffVoices();
 
             memcpy(tmpSmpBuffer, &modEntry->sampleData[s->offset], s->length);
             memset(&modEntry->sampleData[s->offset], 0, MAX_SAMPLE_LEN);
@@ -2251,7 +2079,7 @@ void handleAskYes(void)
             if (newLength > MAX_SAMPLE_LEN)
                 newLength = MAX_SAMPLE_LEN;
 
-            mixerKillVoiceIfReadingSample(editor.currSample);
+            turnOffVoices();
 
             memcpy(tmpSmpBuffer, &modEntry->sampleData[s->offset], s->length);
             memset(&modEntry->sampleData[s->offset], 0, MAX_SAMPLE_LEN);
@@ -2292,7 +2120,7 @@ void handleAskYes(void)
             pointerSetPreviousMode();
             setPrevStatusMessage();
 
-            mixerKillVoiceIfReadingSample(editor.currSample);
+            turnOffVoices();
 
             modEntry->samples[editor.currSample].fineTune   = 0;
             modEntry->samples[editor.currSample].volume     = 0;
@@ -2977,13 +2805,13 @@ void flipFrame(void)
     SDL_RenderPresent(renderer);
 }
 
-void updateSpectrumAnalyzer(int16_t period, int8_t volume)
+void updateSpectrumAnalyzer(uint8_t ch, int8_t vol, int16_t period)
 {
     int16_t scaledVol, scaledNote;
 
-    if (volume > 0)
+    if ((editor.ui.visualizerMode == VISUAL_SPECTRUM) && !editor.muted[ch] && (vol > 0))
     {
-        scaledVol  = (volume * 256) / 682;              //   682 = (64 * 256) / 24    (64 = max sample vol)
+        scaledVol  = (vol * 256) / 682;                 //   682 = (64 * 256) / 24    (64 = max sample vol)
         scaledNote = 743 - (period - 113);              //   743 = 856 - 113          (856 = C-1 period, 113 = B-3 period)
         scaledNote = (scaledNote * scaledNote) / 25093; // 25093 = (743 * 743) / 22   (22 = num of spectrum bars-1)
 
@@ -3009,51 +2837,6 @@ void updateSpectrumAnalyzer(int16_t period, int8_t volume)
             if (editor.spectrumVolumes[scaledNote + 1] > SPECTRUM_BAR_HEIGHT)
                 editor.spectrumVolumes[scaledNote + 1] = SPECTRUM_BAR_HEIGHT;
         }
-    }
-}
-
-static void triggerScope(moduleChannel_t *ch, moduleSample_t *s)
-{
-    ch->scopeEnabled   = true;
-    ch->scopeLoopFlag  = (s->loopStart + s->loopLength) > 2;
-
-    ch->scopeEnd       = s->offset + s->length;
-    ch->scopeLoopBegin = s->offset + s->loopStart;
-    ch->scopeLoopEnd   = s->offset + s->loopStart + s->loopLength;
-
-    // one-shot loop simulation (real PT didn't show this in the scopes...)
-    ch->scopeLoopQuirk = false;
-    if ((s->loopLength > 2) && (s->loopStart == 0))
-    {
-        ch->scopeLoopQuirk = ch->scopeLoopEnd;
-        ch->scopeLoopEnd   = ch->scopeEnd;
-    }
-
-    ch->scopeLoopQuirk_f = ch->scopeLoopQuirk;
-    ch->scopeLoopBegin_f = ch->scopeLoopBegin;
-    ch->scopeLoopEnd_f   = ch->scopeLoopEnd;
-    ch->scopeEnd_f       = ch->scopeEnd;
-
-    if (ch->scopeChangePos)
-    {
-        ch->scopeChangePos = false;
-
-        // ch->scopePos was externally modified
-
-        if (ch->scopeLoopFlag)
-        {
-            if (ch->scopePos_f >= ch->scopeLoopEnd_f)
-                ch->scopePos_f  = ch->scopeLoopBegin_f + fmod(ch->scopePos_f - ch->scopeLoopBegin_f, ch->scopeLoopEnd_f - ch->scopeLoopBegin_f);
-        }
-        else
-        {
-            if (ch->scopePos_f >= ch->scopeEnd_f)
-                ch->scopeEnabled = false;
-        }
-    }
-    else
-    {
-        ch->scopePos_f = s->offset;
     }
 }
 
@@ -3085,85 +2868,6 @@ void sinkVisualizerBars(void)
     {
         if (editor.spectrumVolumes[i] > 0)
             editor.spectrumVolumes[i]--;
-    }
-}
-
-void updateQuadrascope(void)
-{
-    uint8_t i;
-    int32_t samplePlayPos, scopePos;
-    moduleSample_t *s, *currSample;
-    moduleChannel_t *ch;
-
-    if (forceMixerOff || editor.isWAVRendering)
-        return;
-
-    currSample = &modEntry->samples[editor.currSample];
-    hideSprite(SPRITE_SAMPLING_POS_LINE);
-
-    for (i = 0; i < AMIGA_VOICES; i++)
-    {
-        ch = &modEntry->channels[i];
-        if (ch->scopeTrigger)
-        {
-            ch->scopeTrigger = false;
-            ch->scopeEnabled = false;
-
-            s = &modEntry->samples[ch->sample - 1];
-            if (s->length > 0)
-                triggerScope(ch, s);
-        }
-        else
-        {
-            if (ch->scopeEnabled)
-            {
-                if (ch->scopeKeepVolume) ch->scopeVolume = volumeToScopeVolume(ch->volume);
-                if (ch->scopeKeepDelta)  periodToScopeDelta(ch, ch->period);
-
-                ch->scopePos_f += ch->scopeReadDelta_f;
-                if (ch->scopeLoopFlag)
-                {
-                    if (ch->scopePos_f >= ch->scopeLoopEnd_f)
-                    {
-                        if (ch->scopePos_f >= ch->scopeLoopEnd_f)
-                            ch->scopePos_f  = ch->scopeLoopBegin_f + fmod(ch->scopePos_f - ch->scopeLoopBegin_f, ch->scopeLoopEnd_f - ch->scopeLoopBegin_f);
-
-                        // just in case... Shouldn't happen, and this will zero out the fractional part... Not good!
-                             if (ch->scopePos_f < ch->scopeLoopBegin_f) ch->scopePos_f = ch->scopeLoopBegin_f;
-                        else if (ch->scopePos_f > ch->scopeLoopEnd_f)   ch->scopePos_f = ch->scopeLoopEnd_f;
-
-                        if (ch->scopeLoopQuirk_f > 0.0)
-                        {
-                            ch->scopeLoopEnd_f   = ch->scopeLoopQuirk_f;
-                            ch->scopeLoopQuirk_f = 0.0;
-                        }
-                    }
-                }
-                else
-                {
-                    if (ch->scopePos_f >= ch->scopeEnd_f)
-                        ch->scopeEnabled = false;
-                }
-            }
-        }
-
-        // update sample read position sprite
-        if (editor.ui.samplerScreenShown && !editor.ui.terminalShown)
-        {
-            if ((currSample->length > 0) && !editor.muted[ch->chanIndex])
-            {
-                if (ch->scopeEnabled && !editor.ui.samplerVolBoxShown && !editor.ui.samplerFiltersBoxShown)
-                {
-                    scopePos = (int32_t)(ch->scopePos_f); // don't round here, truncate instead!
-                    if ((scopePos >= currSample->offset) && (scopePos < (currSample->offset + currSample->length)))
-                    {
-                        samplePlayPos = 3 + smpPos2Scr(scopePos - currSample->offset);
-                        if ((samplePlayPos >= 3) && (samplePlayPos <= 316))
-                            setSpritePos(SPRITE_SAMPLING_POS_LINE, samplePlayPos, 138);
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -3345,21 +3049,21 @@ static int32_t scopeThreadFunc(void *ptr)
 
     while (editor.programRunning)
     {
-        perfFreq_f = (double)(SDL_GetPerformanceFrequency()); /* should be safe for double */
+        perfFreq_f = (double)(SDL_GetPerformanceFrequency()); // should be safe for double 
         if (perfFreq_f == 0.0)
-            continue; /* panic! */
+            continue; // panic!
 
         timeNow_64bit = SDL_GetPerformanceCounter();
         if (next60HzTime_64bit > timeNow_64bit)
         {
-            delayMs_f = (double)(next60HzTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f); /* should be safe for double */
+            delayMs_f = (double)(next60HzTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f); // should be safe for double
             SDL_Delay((uint32_t)(delayMs_f + 0.5));
         }
 
         frameLength_f = perfFreq_f / VBLANK_HZ;
         next60HzTime_64bit += (uint32_t)(frameLength_f + 0.5);
 
-        updateQuadrascope();
+        updateScopes();
     }
 
     return (true);

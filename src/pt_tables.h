@@ -12,7 +12,7 @@ extern const uint16_t cursorPosTable[24];
 extern const int8_t vuMeterHeights[65];
 extern const uint8_t funkTable[16];
 extern const uint8_t vibratoTable[32];
-extern uint16_t periodTable[606];
+extern const int16_t periodTable[606];
 extern const char hexTable[16];
 extern const uint8_t unshiftedKeymap[64];
 extern const int8_t rawKeyScaleTable[41];

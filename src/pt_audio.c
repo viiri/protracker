@@ -27,6 +27,7 @@
 #include "pt_textout.h"
 #include "pt_terminal.h"
 #include "pt_visuals.h"
+#include "pt_scopes.h"
 
 // rounded constants to fit in floats
 #define M_PI_F  3.1415927f
@@ -44,32 +45,87 @@ typedef struct ledFilterCoeff_t
 
 typedef struct voice_t
 {
-    const int8_t *newData;
-    const int8_t *data;
-    int8_t newSample, swapSampleFlag, loopFlag, newLoopFlag;
-    int32_t length, loopBegin, loopEnd, newLength, newLoopBegin;
-    int32_t newLoopEnd, newSampleOffset, index, loopQuirk;
-    float vol, panL, panR, fraction, delta, lastFraction, lastDelta;
-} voice_t;
+    volatile int8_t active;
+    const int8_t *data, *newData;
+    int32_t length, newLength, phase;
+    float volume_f, delta_f, frac_f, lastDelta_f, lastFrac_f, panL_f, panR_f;
+} paulaVoice_t;
 
 static volatile int8_t filterFlags = FILTER_LP_ENABLED;
-static int8_t amigaPanFlag, defStereoSep = 25;
+static int8_t amigaPanFlag, defStereoSep = 25, wavRenderingDone;
 int8_t forceMixerOff = false;
 static uint16_t ch1Pan, ch2Pan, ch3Pan, ch4Pan;
 int32_t samplesPerTick;
-static int32_t sampleCounter, renderSampleCounter;
-static float *mixBufferL, *mixBufferR;
+static int32_t sampleCounter, maxSamplesToMix;
+static float *mixBufferL_f, *mixBufferR_f;
 static blep_t blep[AMIGA_VOICES], blepVol[AMIGA_VOICES];
 static lossyIntegrator_t filterLo, filterHi;
 static ledFilterCoeff_t filterLEDC;
 static ledFilter_t filterLED;
-static voice_t voice[AMIGA_VOICES];
+static paulaVoice_t paula[AMIGA_VOICES];
 static SDL_AudioDeviceID dev;
 
-int8_t processTick(void);      // defined in pt_modplayer.c
+int8_t intMusic(void);      // defined in pt_modplayer.c
 void storeTempVariables(void); // defined in pt_modplayer.c
 
 void calcMod2WavTotalRows(void);
+
+void clearPaulaAndScopes(void)
+{
+    uint8_t i;
+    paulaVoice_t *v;
+    scopeChannel_t *sc;
+
+    SDL_LockAudio();
+
+    for (i = 0; i < AMIGA_VOICES; ++i)
+    {
+        v  = &paula[i];
+        sc = &scope[i];
+
+        v->active       = false;
+        sc->active      = false;
+        sc->retriggered = false;
+
+        v->phase    = 0;
+        v->volume_f = 0.0f;
+        v->delta_f  = v->lastDelta_f = 0.0f;
+        v->frac_f   = v->lastFrac_f  = 0.0f;
+        v->length   = v->newLength   = 2;
+        v->data     = v->newData     = NULL;
+        // panL/panR are set up later
+
+        sc->phase    = 0;
+        sc->phase_f  = 0.0f;
+        sc->volume   = 0;
+        sc->delta_f  = 0.0f;
+        sc->length   = sc->newLength   = 2; // setting these to 2 is IMPORTANT!
+        sc->loopFlag = sc->newLoopFlag = false;
+        sc->data     = sc->newData     = NULL;
+    }
+
+    SDL_UnlockAudio();
+}
+
+void mixerUpdateLoops(void) // updates Paula loop (+ scopes)
+{
+    uint8_t i;
+    moduleChannel_t *ch;
+    moduleSample_t *s;
+
+    for (i = 0; i < AMIGA_VOICES; ++i)
+    {
+        ch = &modEntry->channels[i];
+
+        if (ch->n_samplenum == editor.currSample)
+        {
+            s = &modEntry->samples[editor.currSample];
+
+            paulaSetData(i, ch->n_start + s->loopStart);
+            paulaSetLength(i, s->loopLength);
+        }
+    }
+}
 
 void setLEDFilter(uint8_t state)
 {
@@ -107,18 +163,18 @@ static void calcCoeffLossyIntegrator(float sr, float hz, lossyIntegrator_t *filt
     filter->coeff[1] = 1.0f / (1.0f + filter->coeff[0]);
 }
 
+static void clearLossyIntegrator(lossyIntegrator_t *filter)
+{
+    filter->buffer[0] = 0.0f;
+    filter->buffer[1] = 0.0f;
+}
+
 static void clearLEDFilter(ledFilter_t *filter)
 {
     filter->led[0] = 0.0f;
     filter->led[1] = 0.0f;
     filter->led[2] = 0.0f;
     filter->led[3] = 0.0f;
-}
-
-static void clearLossyIntegrator(lossyIntegrator_t *filter)
-{
-    filter->buffer[0] = 0.0f;
-    filter->buffer[1] = 0.0f;
 }
 
 static inline void lossyIntegratorLED(ledFilterCoeff_t filterC, ledFilter_t *filter, float *in, float *out)
@@ -161,136 +217,6 @@ void lossyIntegratorHighPass(lossyIntegrator_t *filter, float *in, float *out)
     out[1] = in[1] - low[1];
 }
 
-static inline void updateScope(moduleChannel_t *ch, voice_t *v)
-{
-    ch->scopeLoopFlag = v->loopFlag;
-
-    ch->scopeLoopQuirk   = false;
-    ch->scopeLoopQuirk_f = ch->scopeLoopQuirk;
-
-    ch->scopePos_f = v->newSampleOffset + v->index;
-
-    ch->scopeLoopBegin = v->newSampleOffset + v->loopBegin;
-    ch->scopeLoopEnd   = v->newSampleOffset + v->loopEnd;
-    ch->scopeEnd       = v->newSampleOffset + v->length;
-
-    ch->scopeLoopBegin_f = ch->scopeLoopBegin;
-    ch->scopeLoopEnd_f   = ch->scopeLoopEnd;
-    ch->scopeEnd_f       = ch->scopeEnd;
-}
-
-static inline void updateSampleData(voice_t *v)
-{
-    v->loopFlag  = v->newLoopFlag;
-    v->loopBegin = v->newLoopBegin;
-    v->loopEnd   = v->newLoopEnd;
-    v->data      = v->newData;
-    v->length    = v->newLength;
-}
-
-void mixerSwapVoiceSource(uint8_t ch, const int8_t *src, int32_t length, int32_t loopStart, int32_t loopLength, int32_t newSampleOffset)
-{
-    voice_t *v;
-
-    // If you swap sample in-realtime in PT
-    // without putting a period, the current
-    // sample will play through first (either
-    // >len or >loop_len), then when that is
-    // reached you change to the new sample you
-    // put earlier (if new sample is looped)
-
-    if ((loopStart + loopLength) > 2)
-    {
-        if (((loopStart + loopLength) > length) || (loopStart >= length))
-            return;
-    }
-
-    v = &voice[ch];
-
-    v->loopQuirk       = false;
-    v->newSampleOffset = newSampleOffset;
-    v->swapSampleFlag  = true;
-    v->newData         = src;
-    v->newLoopFlag     = (loopStart + loopLength) > 2;
-    v->newLength       = length;
-    v->newLoopBegin    = loopStart;
-    v->newLoopEnd      = loopStart + loopLength;
-
-    // if the mixer was already shut down earlier after a non-loop swap,
-    // force swap again, but only if the new sample has loop enabled (ONLY!)
-    if ((v->data == NULL) && v->newLoopFlag)
-    {
-        updateSampleData(v);
-
-        // we need to wrap here for safety reasons
-        while (v->index >= v->loopEnd)
-               v->index  = v->loopBegin + (v->index - v->loopEnd);
-
-        updateScope(&modEntry->channels[ch], v);
-        modEntry->channels[ch].scopeTrigger = true;
-    }
-}
-
-void mixerSetVoiceSource(uint8_t ch, const int8_t *src, int32_t length, int32_t loopStart, int32_t loopLength, int32_t offset)
-{
-    voice_t *v;
-
-    v = &voice[ch];
-
-    // PT quirk: LENGTH >65534 + effect 9xx (any number) = shut down voice
-    if ((length > 65534) && (offset > 0))
-    {
-        v->data = NULL;
-        return;
-    }
-
-    if ((loopStart + loopLength) > 2)
-    {
-        if ((loopStart >= length) || ((loopStart + loopLength) > length))
-            return;
-    }
-
-    v->loopQuirk      = false;
-    v->swapSampleFlag = false;
-    v->data           = src;
-    v->index          = offset;
-    v->fraction       = 0.0f;
-    v->length         = length;
-    v->loopFlag       = (loopStart + loopLength) > 2;
-    v->loopBegin      = loopStart;
-    v->loopEnd        = loopStart + loopLength;
-
-    // Check external 9xx usage (Set Sample Offset)
-    if (v->loopFlag)
-    {
-        if (offset >= v->loopEnd)
-            v->index = v->loopBegin;
-    }
-    else
-    {
-        if (offset >= v->length)
-            v->data = NULL;
-    }
-
-    if ((loopLength > 2) && (loopStart == 0))
-    {
-        v->loopQuirk = v->loopEnd;
-        v->loopEnd   = v->length;
-    }
-}
-
-void mixerSetVoiceOffset(uint8_t ch, int32_t offset) // used for PlayRange/PlayDisplay only (sampler screen)
-{
-    voice_t *v;
-
-    v = &voice[ch];
-
-    if (offset >= v->length)
-        v->data = NULL;
-    else
-        v->index = offset;
-}
-
 // adejr: these sin/cos approximations both use a 0..1
 // parameter range and have 'normalized' (1/2 = 0db) coeffs
 //
@@ -319,171 +245,133 @@ static void mixerSetVoicePan(uint8_t ch, uint16_t pan) // pan = 0..256
 
     p = pan * (1.0f / 256.0f);
 
-    voice[ch].panL = cosApx(p);
-    voice[ch].panR = sinApx(p);
+    paula[ch].panL_f = cosApx(p);
+    paula[ch].panR_f = sinApx(p);
 }
 
 void mixerKillVoice(uint8_t ch)
 {
-    float tmpDelta, tmpVol, tmpPanL, tmpPanR;
+    paulaVoice_t *v;
+    scopeChannel_t *sc;
 
-    SDL_LockAudio();
+    v  = &paula[ch];
+    sc = &scope[ch];
 
-    tmpVol   = voice[ch].vol;
-    tmpPanL  = voice[ch].panL;
-    tmpPanR  = voice[ch].panR;
-    tmpDelta = voice[ch].delta;
+    v->active   = false;
+    v->volume_f = 0.0f;
+    sc->active = false;
+    sc->volume = 0;
 
-    memset(&voice[ch],   0, sizeof (voice_t));
     memset(&blep[ch],    0, sizeof (blep_t));
     memset(&blepVol[ch], 0, sizeof (blep_t));
-
-    voice[ch].data  = NULL;
-    voice[ch].vol   = tmpVol;
-    voice[ch].panL  = tmpPanL;
-    voice[ch].panR  = tmpPanR;
-    voice[ch].delta = tmpDelta;
-
-    SDL_UnlockAudio();
 }
 
-void mixerKillAllVoices(void)
+void turnOffVoices(void)
 {
-    int8_t i;
+    uint8_t i;
 
-    SDL_LockAudio();
-
-    memset(voice,   0, sizeof (voice));
-    memset(blep,    0, sizeof (blep));
-    memset(blepVol, 0, sizeof (blepVol));
+    for (i = 0; i < AMIGA_VOICES; ++i)
+        mixerKillVoice(i);
 
     clearLossyIntegrator(&filterLo);
     clearLossyIntegrator(&filterHi);
     clearLEDFilter(&filterLED);
 
     editor.tuningFlag = false;
-
-    mixerSetVoicePan(0, ch1Pan);
-    mixerSetVoicePan(1, ch2Pan);
-    mixerSetVoicePan(2, ch3Pan);
-    mixerSetVoicePan(3, ch4Pan);
-
-    for (i = 0; i < AMIGA_VOICES; ++i)
-        voice[i].data = NULL;
-
-    SDL_UnlockAudio();
 }
 
-void mixerKillVoiceIfReadingSample(uint8_t sample)
+void paulaRestartDMA(uint8_t ch)
 {
-    uint8_t i;
-    moduleChannel_t *ch;
+    int32_t length;
+    paulaVoice_t *v;
+    scopeChannel_t *sc;
 
-    for (i = 0; i < AMIGA_VOICES; ++i)
-    {
-        // voice[x].data *always* points to sampleData[s->offset], so this method is safe.
-        // Sample offsets (9xx, etc) are added to voice[x].index instead.
+    v  = &paula[ch];
+    sc = &scope[ch];
 
-        if (voice[i].data == &modEntry->sampleData[modEntry->samples[sample].offset])
-        {
-            mixerKillVoice(i);
+    length = v->newLength;
+    if (length < 2)
+        length = 2;
 
-            ch = &modEntry->channels[i];
+    v->frac_f = 0.0f;
+    v->phase  = 0;
+    v->data   = v->newData;
+    v->length = length;
+    v->active = true;
 
-            ch->scopeEnabled    = false;
-            ch->scopeTrigger    = false;
-            ch->scopeLoopFlag   = false;
-            ch->scopeKeepDelta  = true;
-            ch->scopeKeepVolume = true;
-        }
-    }
+    sc->phase_f     = 0.0f;
+    sc->phase       = 0;
+    sc->data        = sc->newData;
+    sc->length      = length;
+    sc->active      = true;
+    sc->retriggered = true;
+    sc->loopFlag    = sc->newLoopFlag;
 }
 
-void mixerSetVoiceVol(uint8_t ch, int8_t vol)
+void paulaSetPeriod(uint8_t ch, uint16_t period)
 {
-    voice[ch].vol = vol * (1.0f / 64.0f);
-}
+    float hz_f, audioFreq_f;
+    paulaVoice_t *v;
 
-void mixerSetVoiceDelta(uint8_t ch, uint16_t period)
-{
-    voice_t *v;
-
-    v = &voice[ch];
-
-    // this is what really happens on Paula on a real Amiga
-    // on normal video modes. Tested and confirmed!
+    v = &paula[ch];
 
     if (period == 0)
     {
-        v->delta = 0.0f;
-        return;
-    }
-
-    if (period < 113)
-        period = 113;
-
-    if (!editor.isSMPRendering)
-    {
-        v->delta = ((float)(PAULA_PAL_CLK) / period) / editor.outputFreq_f;
+        hz_f = v->delta_f = 0.0f;
     }
     else
     {
-        // for pattern-to-sample rendering
-        if (editor.pat2SmpHQ)
-            v->delta = ((float)(PAULA_PAL_CLK) / period) / 28836.0f; // high quality mode
-        else
-            v->delta = ((float)(PAULA_PAL_CLK) / period) / 22168.0f;
+        if (period < 113)
+            period = 113;
+
+        audioFreq_f = editor.outputFreq_f;
+        if (editor.isSMPRendering)
+            audioFreq_f = editor.pat2SmpHQ ? 28836.0f : 22168.0f;
+
+        hz_f = (float)(PAULA_PAL_CLK) / period;
+        v->delta_f = hz_f / audioFreq_f;
     }
 
-    if (v->lastDelta == 0.0f)
-        v->lastDelta = v->delta;
+    if (v->lastDelta_f == 0.0f)
+        v->lastDelta_f = v->delta_f;
+
+    scope[ch].delta_f = hz_f / (VBLANK_HZ / 1.001f); // "/ 1.001" to get real vblank hz
 }
 
-static inline void insertEndingBlep(blep_t *b, voice_t *v)
+void paulaSetVolume(uint8_t ch, int8_t vol)
 {
-    if (b->lastValue != 0.0f)
-    {
-        if ((v->lastDelta > 0.0f) && (v->lastDelta > v->lastFraction))
-            blepAdd(b, v->lastFraction / v->lastDelta, b->lastValue);
+    if (vol & (1 << 6))
+        vol = 0x0040;
+    else
+        vol &= 0x003F;
 
-        b->lastValue = 0.0f;
-    }
+    paula[ch].volume_f = vol * (1.0f / 64.0f);
+    scope[ch].volume   = 0 - vol;
 }
 
-void updateVoiceParams(void)
+void paulaSetLength(uint8_t ch, uint32_t len)
 {
-    uint8_t i;
+    if (len < 2)
+        len = 2;
+
+    scope[ch].newLength = paula[ch].newLength = len;
+}
+
+void paulaSetData(uint8_t ch, const int8_t *src)
+{
+    uint8_t smp;
     moduleSample_t *s;
-    moduleChannel_t *ch;
-    voice_t *v;
 
-    for (i = 0; i < AMIGA_VOICES; ++i)
-    {
-        // voice[x].data *always* points to sampleData[s->offset], so this method is safe.
-        // Sample offsets (9xx, etc) are added to voice[x].index instead.
+    smp = modEntry->channels[ch].n_samplenum;
+    PT_ASSERT(smp <= 30);
+    if (smp > 30)
+        smp = 30;
 
-        if (voice[i].data == &modEntry->sampleData[modEntry->samples[editor.currSample].offset])
-        {
-            s  = &modEntry->samples[editor.currSample];
-            ch = &modEntry->channels[i];
-            v  = &voice[i];
+    s = &modEntry->samples[smp];
 
-            v->loopBegin = s->loopStart;
-            v->loopEnd   = s->loopStart + s->loopLength;
-            v->length    = s->length;
-
-            ch->scopeLoopQuirk   = false;
-            ch->scopeLoopQuirk_f = ch->scopeLoopQuirk;
-
-            ch->scopeLoopBegin = s->offset + v->loopBegin;
-            ch->scopeLoopEnd   = s->offset + v->loopEnd;
-            ch->scopeEnd       = s->offset + s->length;
-
-            ch->scopeLoopBegin_f = ch->scopeLoopBegin;
-            ch->scopeLoopEnd_f   = ch->scopeLoopEnd;
-            ch->scopeEnd_f       = ch->scopeEnd;
-        }
-    }
+    paula[ch].newData     = src;
+    scope[ch].newData     = src;
+    scope[ch].newLoopFlag = ((s->loopStart + s->loopLength) > 2) ? true : false;
 }
 
 void toggleLowPassFilter(void)
@@ -507,250 +395,274 @@ void toggleLowPassFilter(void)
     }
 }
 
-static void outputAudio(int16_t *target, int32_t numSamples)
+void mixChannels(int32_t numSamples)
 {
-    volatile float *vuMeter;
-    int8_t tmpVol, tmpSmp8;
+    const int8_t *dataPtr;
+    int8_t tmpVol;
     uint8_t i;
-    int16_t *outStream;
     int32_t j;
-    float tempSample, tempVolume, out[2], mutedVol;
+    volatile float *vuMeter_f;
+    float tempSample_f, tempVolume_f, mutedVol_f;
     blep_t *bSmp, *bVol;
-    voice_t *v;
-    moduleChannel_t *ch;
+    paulaVoice_t *v;
 
-    memset(mixBufferL, 0, sizeof (float) * numSamples);
-    memset(mixBufferR, 0, sizeof (float) * numSamples);
+    memset(mixBufferL_f, 0, sizeof (float) * numSamples);
+    memset(mixBufferR_f, 0, sizeof (float) * numSamples);
 
     for (i = 0; i < AMIGA_VOICES; ++i)
     {
-        v = &voice[i];
+        v         = &paula[i];
+        bSmp      = &blep[i];
+        bVol      = &blepVol[i];
+        vuMeter_f = &editor.realVuMeterVolumes[i];
 
-        mutedVol = -1.0f;
+        mutedVol_f = -1.0f;
         if (editor.muted[i])
         {
-            mutedVol = v->vol;
-            v->vol   = 0.0f;
+            mutedVol_f  = v->volume_f;
+            v->volume_f = 0.0f;
         }
 
-        if (voice[i].data != NULL)
+        for (j = 0; v->active && (j < numSamples); ++j)
         {
-            bSmp    = &blep[i];
-            bVol    = &blepVol[i];
-            ch      = &modEntry->channels[i];
-            vuMeter = &editor.realVuMeterVolumes[i];
-
-            j = 0;
-            for (; j < numSamples; ++j)
+            dataPtr = v->data;
+            if (dataPtr == NULL)
             {
-                tmpSmp8 = (v->data != NULL) ? v->data[v->index] : 0;
-
-                tempSample = tmpSmp8 * (1.0f / 128.0f);
-                tempVolume = (v->data != NULL) ? v->vol : 0.0f;
-
-                // if sample data changes, anti-alias the step
-                // this code assumes index can't change >1 per sample
-                if (editor.blepSynthesis)
-                {
-                    if (tempSample != bSmp->lastValue)
-                    {
-                        if ((v->lastDelta > 0.0f) && (v->lastDelta > v->lastFraction))
-                            blepAdd(bSmp, v->lastFraction / v->lastDelta, bSmp->lastValue - tempSample);
-
-                        bSmp->lastValue = tempSample;
-                    }
-
-                    // if volume data changes, anti-alias the step
-                    if (tempVolume != bVol->lastValue)
-                    {
-                        PT_ASSERT(tempVolume <= 1.0f);
-
-                        blepAdd(bVol, 0.0f, bVol->lastValue - tempVolume);
-                        bVol->lastValue = tempVolume;
-                    }
-
-                    // add sample anti-alias data to sample value and scale by volume
-                    if (bSmp->samplesLeft) tempSample += blepRun(bSmp);
-
-                    // add volume anti-alias pulse data to volume value
-                    if (bVol->samplesLeft) tempVolume += blepRun(bVol);
-                }
-
-                tempSample *= tempVolume;
-
-                if (editor.ui.realVuMeters)
-                {
-                    tmpVol = tempSample * 48.0f;
-                    tmpVol = ABS(tmpVol);
-                    if (tmpVol > *vuMeter)
-                        *vuMeter = tmpVol;
-                }
-
-                mixBufferL[j] += (tempSample * v->panL);
-                mixBufferR[j] += (tempSample * v->panR);
-
-                if (v->data != NULL)
-                {
-                    v->fraction += v->delta;
-
-                    if (v->fraction >= 1.0f)
-                    {
-                        v->index++;
-                        v->fraction -= 1.0f;
-
-                        // store last updated state for blep fraction
-                        v->lastFraction = v->fraction;
-                        v->lastDelta    = v->delta;
-
-                        PT_ASSERT(v->lastDelta > v->lastFraction);
-
-                        if (v->loopFlag)
-                        {
-                            if (v->index >= v->loopEnd)
-                            {
-                                if (v->swapSampleFlag)
-                                {
-                                    v->swapSampleFlag = false;
- 
-                                    if (!v->newLoopFlag)
-                                    {
-                                        v->data = NULL;
-                                        ch->scopeLoopFlag = false;
-
-                                        if (editor.blepSynthesis)
-                                        {
-                                            insertEndingBlep(bSmp, v);
-                                            j++; // we inserted an ending blep sample
-                                        }
-
-                                        break;
-                                    }
-
-                                    updateSampleData(v);
-
-                                    v->index = v->loopBegin;
-
-                                    ch->scopeLoopFlag = true;
-                                    updateScope(ch, v);
-                                }
-                                else
-                                {
-                                    v->index = v->loopBegin;
-
-                                    if (v->loopQuirk)
-                                    {
-                                        v->loopEnd   = v->loopQuirk;
-                                        v->loopQuirk = false;
-                                    }
-                                }
-                            }
-                        }
-                        else
-                        {
-                            if (v->index >= v->length)
-                            {
-                                if (v->swapSampleFlag)
-                                {
-                                    v->swapSampleFlag = false;
-
-                                    if (!v->newLoopFlag)
-                                    {
-                                        v->data = NULL;
-                                        ch->scopeLoopFlag = false;
-
-                                        if (editor.blepSynthesis)
-                                        {
-                                            insertEndingBlep(bSmp, v);
-                                            j++; // we inserted an ending blep sample
-                                        }
-
-                                        break;
-                                    }
-
-                                    updateSampleData(v);
-
-                                    v->index = v->loopBegin;
-
-                                    ch->scopeLoopFlag = true;
-                                    updateScope(ch, v);
-                                }
-                                else
-                                {
-                                    v->data = NULL;
-
-                                    if (editor.blepSynthesis)
-                                    {
-                                        insertEndingBlep(bSmp, v);
-                                        j++; // we inserted an ending blep sample
-                                    }
-
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
+                tempSample_f = 0.0f;
+                tempVolume_f = 0.0f;
+            }
+            else
+            {
+                tempSample_f = dataPtr[v->phase] * (1.0f / 128.0f);
+                tempVolume_f = v->volume_f;
             }
 
-            // sometimes a channel might be empty,
-            // but the blep-buffer still contains data.
-            if (editor.blepSynthesis)
+            if (tempSample_f != bSmp->lastValue)
             {
-                if ((j < numSamples) && (v->data == NULL) && (bSmp->samplesLeft || bVol->samplesLeft))
+                if ((v->lastDelta_f > 0.0f) && (v->lastDelta_f > v->lastFrac_f))
+                    blepAdd(bSmp, v->lastFrac_f / v->lastDelta_f, bSmp->lastValue - tempSample_f);
+                bSmp->lastValue = tempSample_f;
+            }
+
+            if (tempVolume_f != bVol->lastValue)
+            {
+                blepAdd(bVol, 0.0f, bVol->lastValue - tempVolume_f);
+                bVol->lastValue = tempVolume_f;
+            }
+
+            if (bSmp->samplesLeft) tempSample_f += blepRun(bSmp);
+            if (bVol->samplesLeft) tempVolume_f += blepRun(bVol);
+
+            tempSample_f *= tempVolume_f;
+
+            if (editor.ui.realVuMeters)
+            {
+                tmpVol = tempSample_f * 48.0f;
+                tmpVol = ABS(tmpVol);
+                if (tmpVol > *vuMeter_f)
+                    *vuMeter_f = tmpVol;
+            }
+
+            mixBufferL_f[j] += (tempSample_f * v->panL_f);
+            mixBufferR_f[j] += (tempSample_f * v->panR_f);
+
+            v->frac_f += v->delta_f;
+            if (v->frac_f >= 1.0f)
+            {
+                v->frac_f -= 1.0f;
+
+                v->lastFrac_f  = v->frac_f;
+                v->lastDelta_f = v->delta_f;
+
+                if (++v->phase >= v->length)
                 {
-                    for (; j < numSamples; ++j)
-                    {
-                        tempSample = bSmp->lastValue;
-                        tempVolume = bVol->lastValue;
+                    v->phase = 0;
 
-                        if (bSmp->samplesLeft) tempSample += blepRun(bSmp);
-                        if (bVol->samplesLeft) tempVolume += blepRun(bVol);
-
-                        tempSample *= tempVolume;
-
-                        mixBufferL[j] += (tempSample * v->panL);
-                        mixBufferR[j] += (tempSample * v->panR);
-                    }
+                    // re-fetch Paula register values now
+                    v->length = v->newLength;
+                    v->data   = v->newData;
                 }
             }
         }
 
-        if (mutedVol != -1.0f)
-            v->vol = mutedVol;
+        if (mutedVol_f != -1.0f)
+            v->volume_f = mutedVol_f;
+    }
+}
+
+void pat2SmpMixChannels(int32_t numSamples) // pat2smp needs a multi-step mixer routine (lower mix rate), otherwise identical
+{
+    const int8_t *dataPtr;
+    uint8_t i;
+    int32_t j, fracTrunc;
+    float tempSample_f, tempVolume_f, mutedVol_f;
+    blep_t *bSmp, *bVol;
+    paulaVoice_t *v;
+
+    memset(mixBufferL_f, 0, sizeof (float) * numSamples);
+    memset(mixBufferR_f, 0, sizeof (float) * numSamples);
+
+    for (i = 0; i < AMIGA_VOICES; ++i)
+    {
+        v    = &paula[i];
+        bSmp = &blep[i];
+        bVol = &blepVol[i];
+
+        mutedVol_f = -1.0f;
+        if (editor.muted[i])
+        {
+            mutedVol_f  = v->volume_f;
+            v->volume_f = 0.0f;
+        }
+
+        for (j = 0; v->active && (j < numSamples); ++j)
+        {
+            dataPtr = v->data;
+            if (dataPtr == NULL)
+            {
+                tempSample_f = 0.0f;
+                tempVolume_f = 0.0f;
+            }
+            else
+            {
+                tempSample_f = dataPtr[v->phase] * (1.0f / 128.0f);
+                tempVolume_f = v->volume_f;
+            }
+
+            if (tempSample_f != bSmp->lastValue)
+            {
+                if ((v->lastDelta_f > 0.0f) && (v->lastDelta_f > v->lastFrac_f))
+                    blepAdd(bSmp, v->lastFrac_f / v->lastDelta_f, bSmp->lastValue - tempSample_f);
+                bSmp->lastValue = tempSample_f;
+            }
+
+            if (tempVolume_f != bVol->lastValue)
+            {
+                blepAdd(bVol, 0.0f, bVol->lastValue - tempVolume_f);
+                bVol->lastValue = tempVolume_f;
+            }
+
+            if (bSmp->samplesLeft) tempSample_f += blepRun(bSmp);
+            if (bVol->samplesLeft) tempVolume_f += blepRun(bVol);
+
+            tempSample_f *= tempVolume_f;
+
+            mixBufferL_f[j] += (tempSample_f * v->panL_f);
+            mixBufferR_f[j] += (tempSample_f * v->panR_f);
+
+            v->frac_f += v->delta_f;
+            while (v->frac_f >= 1.0f)
+            {
+                fracTrunc  = (int32_t)(v->frac_f);
+                v->phase  += fracTrunc;
+                v->frac_f -= fracTrunc;
+
+                v->lastFrac_f  = v->frac_f;
+                v->lastDelta_f = v->delta_f;
+
+                while (v->phase >= v->length)
+                {
+                    v->phase -= v->length;
+
+                    // re-fetch Paula register values now
+                    v->length = v->newLength;
+                    v->data   = v->newData;
+                }
+            }
+        }
+
+        if (mutedVol_f != -1.0f)
+            v->volume_f = mutedVol_f;
+    }
+}
+
+static inline void processMixedSample(int32_t i, float *out_f, uint8_t mono)
+{
+    out_f[0] = mixBufferL_f[i];
+    out_f[1] = mixBufferR_f[i];
+
+    if (!editor.isSMPRendering) // don't apply filters when rendering pattern to sample
+    {
+        if (filterFlags & FILTER_LP_ENABLED)  lossyIntegrator(&filterLo, out_f, out_f);
+        if (filterFlags & FILTER_LED_ENABLED) lossyIntegratorLED(filterLEDC, &filterLED, out_f, out_f);
     }
 
+    lossyIntegratorHighPass(&filterHi, out_f, out_f);
+
+    // normalize
+    out_f[0] *= (32767.0f / AMIGA_VOICES);
+    out_f[1] *= (32767.0f / AMIGA_VOICES);
+
+    // clamp
+    out_f[0]  = CLAMP(out_f[0], -32768.0f, 32767.0f);
+    out_f[1]  = CLAMP(out_f[1], -32768.0f, 32767.0f);
+
+    if (mono)
+        out_f[0] = (out_f[0] / 2.0f) + (out_f[1] / 2.0f);
+}
+
+void outputAudio(int16_t *target, int32_t numSamples)
+{
+    int16_t *outStream, smpL, smpR;
+    int32_t j;
+    float out_f[2];
+
     outStream = target;
-    for (j = 0; j < numSamples; ++j)
+    if (editor.isWAVRendering)
     {
-        out[0] = mixBufferL[j];
-        out[1] = mixBufferR[j];
+        // render to WAV file
+        mixChannels(numSamples);
+        for (j = 0; j < numSamples; ++j)
+        {
+            processMixedSample(j, out_f, false);
 
-        if (filterFlags & FILTER_LP_ENABLED)
-            lossyIntegrator(&filterLo, out, out);
+            smpL = (int16_t)(out_f[0]);
+            smpR = (int16_t)(out_f[1]);
 
-        if (filterFlags & FILTER_LED_ENABLED)
-            lossyIntegratorLED(filterLEDC, &filterLED, out, out);
+            if (bigEndian)
+            {
+                smpL = SWAP16(smpL);
+                smpR = SWAP16(smpR);
+            }
 
-        lossyIntegratorHighPass(&filterHi, out, out);
+            *outStream++ = smpL;
+            *outStream++ = smpR;
+        }
+    }
+    else if (editor.isSMPRendering)
+    {
+        // render to sample
+        pat2SmpMixChannels(numSamples);
+        for (j = 0; j < numSamples; ++j)
+        {
+            processMixedSample(j, out_f, true); // mono
+            smpL = (int16_t)(out_f[0]);
 
-        // - Highpass doubles channel peak
-        // - Panning adds sqrt(2) at 50% and 100% wide pans
-        // - Minimal correlation means mixing channels can result in sqrt(2), not 2
-        // - All this taken into account makes the best-case level of 2 okay,
-        // although 8*sqrt(2)*little from LED filter overshoot is possible worst-case!
-        // - Even in the best case without pan and without high-pass, the level for
-        // chiptunes using amp 64 pulse waves will be 4. With pan, 2 * sqrt(2) (2.83).
-        // - It is likely that the majority of modules will be peaking around 3.
-        out[0] *= (-32767.0f / 3.2f); // negative because signal phase is flipped on A500/A1200 for some reason
-        out[1] *= (-32767.0f / 3.2f); // ----
+            if (editor.pat2SmpPos >= MAX_SAMPLE_LEN)
+            {
+                editor.smpRenderingDone = true;
+                break;
+            }
+            else
+            {
+                editor.pat2SmpBuf[editor.pat2SmpPos++] = smpL;
+            }
+        }
+    }
+    else
+    {
+        // render to real audio
+        mixChannels(numSamples);
+        for (j = 0; j < numSamples; ++j)
+        {
+            processMixedSample(j, out_f, false);
 
-        // clamp in case of overflow
-        out[0] = CLAMP(out[0], -32768.0f, 32767.0f);
-        out[1] = CLAMP(out[1], -32768.0f, 32767.0f);
+            smpL = (int16_t)(out_f[0]);
+            smpR = (int16_t)(out_f[0]);
 
-        // convert to int and send to output
-        *outStream++ = (int16_t)(out[0]);
-        *outStream++ = (int16_t)(out[1]);
+            *outStream++ = smpL;
+            *outStream++ = smpR;
+        }
     }
 }
 
@@ -784,7 +696,7 @@ void audioCallback(void *userdata, uint8_t *stream, int32_t len)
         else
         {
             if (editor.songPlaying)
-                processTick();
+                intMusic();
 
             sampleCounter = samplesPerTick;
         }
@@ -873,7 +785,6 @@ void mixerCalcVoicePans(uint8_t stereoSeparation)
 
 int8_t setupAudio(void)
 {
-    int32_t maxSamplesToMix;
     SDL_AudioSpec want, have;
 
     want.freq     = ptConfig.soundFrequency;
@@ -904,15 +815,15 @@ int8_t setupAudio(void)
 
     maxSamplesToMix = (int32_t)(((have.freq * 2.5) / 32.0) + 0.5);
 
-    mixBufferL = (float *)(calloc(maxSamplesToMix, sizeof (float)));
-    if (mixBufferL == NULL)
+    mixBufferL_f = (float *)(calloc(maxSamplesToMix, sizeof (float)));
+    if (mixBufferL_f == NULL)
     {
         showErrorMsgBox("Out of memory!");
         return (false);
     }
 
-    mixBufferR = (float *)(calloc(maxSamplesToMix, sizeof (float)));
-    if (mixBufferR == NULL)
+    mixBufferR_f = (float *)(calloc(maxSamplesToMix, sizeof (float)));
+    if (mixBufferR_f == NULL)
     {
         showErrorMsgBox("Out of memory!");
         return (false);
@@ -947,9 +858,8 @@ int8_t setupAudio(void)
 
 void audioClose(void)
 {
+    turnOffVoices();
     editor.songPlaying = false;
-
-    mixerKillAllVoices();
 
     if (dev > 0)
     {
@@ -958,16 +868,16 @@ void audioClose(void)
         dev = 0;
     }
 
-    if (mixBufferL != NULL)
+    if (mixBufferL_f != NULL)
     {
-        free(mixBufferL);
-        mixBufferL = NULL;
+        free(mixBufferL_f);
+        mixBufferL_f = NULL;
     }
 
-    if (mixBufferR != NULL)
+    if (mixBufferR_f != NULL)
     {
-        free(mixBufferR);
-        mixBufferR = NULL;
+        free(mixBufferR_f);
+        mixBufferR_f = NULL;
     }
 
     if (editor.mod2WavBuffer != NULL)
@@ -1015,439 +925,32 @@ void toggleAmigaPanMode(void)
 
 // PAT2SMP RELATED STUFF
 
-static inline void insertEndingBlep2(blep_t *b, voice_t *v)
+uint32_t getAudioFrame(int16_t *outStream)
 {
-    if (v->delta < 1.0f)
+    int32_t b, c;
+
+    if (intMusic() == false)
+        wavRenderingDone = true;
+
+    b = samplesPerTick;
+    while (b > 0)
     {
-        if (b->lastValue != 0.0f)
-        {
-            if ((v->lastDelta > 0.0f) && (v->lastDelta > v->lastFraction))
-                blepAdd(b, v->lastFraction / v->lastDelta, b->lastValue);
+        c = b;
+        if (c > maxSamplesToMix)
+            c = maxSamplesToMix;
 
-            b->lastValue = 0.0f;
-        }
-    }
-}
+        outputAudio(outStream, c);
+        b -= c;
 
-void outputAudioToSample(int32_t numSamples)
-{
-    int8_t tmpSmp8;
-    uint8_t i;
-    int32_t j, fracTrunc;
-    float tempSample, tempVolume, out[2], mutedVol;
-    blep_t *bSmp, *bVol;
-    voice_t *v;
-    moduleChannel_t *ch;
-
-    memset(mixBufferL, 0, numSamples * sizeof (float));
-
-    for (i = 0; i < AMIGA_VOICES; ++i)
-    {
-        v = &voice[i];
-
-        mutedVol = -1.0f;
-        if (editor.muted[i])
-        {
-            mutedVol = v->vol;
-            v->vol   = 0.0f;
-        }
-
-        if (voice[i].data != NULL)
-        {
-            bSmp = &blep[i];
-            bVol = &blepVol[i];
-            ch   = &modEntry->channels[i];
-
-            j = 0;
-            for (; j < numSamples; ++j)
-            {
-                tmpSmp8 = (v->data != NULL) ? v->data[v->index] : 0;
-
-                tempSample = tmpSmp8 * (1.0f / 128.0f);
-                tempVolume = (v->data != NULL) ? v->vol : 0.0f;
-
-                if (v->delta < 1.0f)
-                {
-                    if (tempSample != bSmp->lastValue)
-                    {
-                        if ((v->lastDelta > 0.0f) && (v->lastDelta > v->lastFraction))
-                            blepAdd(bSmp, v->lastFraction / v->lastDelta, bSmp->lastValue - tempSample);
-
-                        bSmp->lastValue = tempSample;
-                    }
-
-                    if (tempVolume != bVol->lastValue)
-                    {
-                        blepAdd(bVol, 0.0f, bVol->lastValue - tempVolume);
-                        bVol->lastValue = tempVolume;
-                    }
-                }
-
-                if (bSmp->samplesLeft) tempSample += blepRun(bSmp);
-                if (bVol->samplesLeft) tempVolume += blepRun(bVol);
-
-                tempSample *= tempVolume;
-
-                mixBufferL[j] += tempSample;
-
-                if (v->data != NULL)
-                {
-                    v->fraction += v->delta;
-
-                    if (v->fraction >= 1.0f)
-                    {
-                        fracTrunc    = (int32_t)(v->fraction);
-                        v->index    += fracTrunc;
-                        v->fraction -= fracTrunc;
-
-                        v->lastFraction = v->fraction;
-                        v->lastDelta    = v->delta;
-
-                        if (v->loopFlag)
-                        {
-                            if (v->index >= v->loopEnd)
-                            {
-                                if (v->swapSampleFlag)
-                                {
-                                    v->swapSampleFlag = false;
-
-                                    if (!v->newLoopFlag)
-                                    {
-                                        v->data = NULL;
-                                        ch->scopeLoopFlag = false;
-
-                                        if (v->delta < 1.0f)
-                                            insertEndingBlep2(bSmp, v);
-
-                                        j++;
-                                        break;
-                                    }
-
-                                    updateSampleData(v);
-
-                                    v->index = v->loopBegin;
-
-                                    ch->scopeLoopFlag = true;
-                                    updateScope(ch, v);
-                                }
-                                else
-                                {
-                                    v->index = v->loopBegin;
-
-                                    if (v->loopQuirk)
-                                    {
-                                        v->loopEnd   = v->loopQuirk;
-                                        v->loopQuirk = false;
-                                    }
-                                }
-                            }
-                        }
-                        else
-                        {
-                            if (v->index >= v->length)
-                            {
-                                if (v->swapSampleFlag)
-                                {
-                                    v->swapSampleFlag = false;
-
-                                    if (!v->newLoopFlag)
-                                    {
-                                        v->data = NULL;
-                                        ch->scopeLoopFlag = false;
-
-                                        if (v->delta < 1.0f)
-                                            insertEndingBlep2(bSmp, v);
-
-                                        j++;
-                                        break;
-                                    }
-
-                                    updateSampleData(v);
-
-                                    v->index = v->loopBegin;
-
-                                    ch->scopeLoopFlag = true;
-                                    updateScope(ch, v);
-                                }
-                                else
-                                {
-                                    v->data = NULL;
-
-                                    if (v->delta < 1.0f)
-                                        insertEndingBlep2(bSmp, v);
-
-                                    j++;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if ((j < numSamples) && (v->data == NULL) && (bSmp->samplesLeft || bVol->samplesLeft))
-            {
-                for (; j < numSamples; ++j)
-                {
-                    tempSample = bSmp->lastValue;
-                    tempVolume = bVol->lastValue;
-
-                    if (bSmp->samplesLeft) tempSample += blepRun(bSmp);
-                    if (bVol->samplesLeft) tempVolume += blepRun(bVol);
-
-                    tempSample *= tempVolume;
-
-                    mixBufferL[j] += tempSample;
-                }
-            }
-        }
-
-        if (mutedVol != -1.0f)
-            v->vol = mutedVol;
+        outStream += (c * 2);
     }
 
-    for (j = 0; j < numSamples; ++j)
-    {
-        out[0] = mixBufferL[j];
-        out[1] = mixBufferL[j];
-
-        lossyIntegratorHighPass(&filterHi, out, out);
-
-        out[0] *= (32767.0f / 3.2f);
-        out[0]  = CLAMP(out[0], -32768.0f, 32767.0f);
-
-        if (editor.pat2SmpPos < MAX_SAMPLE_LEN)
-        {
-            editor.pat2SmpBuf[editor.pat2SmpPos] = (int16_t)(out[0]);
-            editor.pat2SmpPos++;
-        }
-    }
-}
-
-// MOD2WAV RELATED STUFF
-static void outputAudioToFile(FILE *fOut, int32_t numSamples)
-{
-    int8_t tmpSmp8;
-    uint8_t i;
-    int16_t *ptr, renderL, renderR;
-    int32_t j;
-    float tempSample, tempVolume, out[2], mutedVol;
-    blep_t *bSmp, *bVol;
-    voice_t *v;
-    moduleChannel_t *ch;
-
-    memset(mixBufferL, 0, numSamples * sizeof (float));
-    memset(mixBufferR, 0, numSamples * sizeof (float));
-
-    ptr = editor.mod2WavBuffer;
-
-    for (i = 0; i < AMIGA_VOICES; ++i)
-    {
-        v = &voice[i];
-
-        mutedVol = -1.0f;
-        if (editor.muted[i])
-        {
-            mutedVol = v->vol;
-            v->vol   = 0.0f;
-        }
-
-        if (voice[i].data != NULL)
-        {
-            bSmp = &blep[i];
-            bVol = &blepVol[i];
-            ch   = &modEntry->channels[i];
-
-            j = 0;
-            for (; j < numSamples; ++j)
-            {
-                tmpSmp8 = (v->data != NULL) ? v->data[v->index] : 0;
-
-                tempSample = tmpSmp8 * (1.0f / 128.0f);
-                tempVolume = (v->data != NULL) ? v->vol : 0.0f;
-
-                if (tempSample != bSmp->lastValue)
-                {
-                    PT_ASSERT(v->lastDelta > 0.0f);
-                    PT_ASSERT(v->lastDelta > v->lastFraction);
-
-                    if (v->lastDelta > 0.0f)
-                        blepAdd(bSmp, v->lastFraction / v->lastDelta, bSmp->lastValue - tempSample);
-
-                    bSmp->lastValue = tempSample;
-                }
-
-                if (tempVolume != bVol->lastValue)
-                {
-                    PT_ASSERT(tempVolume <= 1.0f);
-
-                    blepAdd(bVol, 0.0f, bVol->lastValue - tempVolume);
-                    bVol->lastValue = tempVolume;
-                }
-
-                if (bSmp->samplesLeft) tempSample += blepRun(bSmp);
-                if (bVol->samplesLeft) tempVolume += blepRun(bVol);
-
-                tempSample *= tempVolume;
-
-                mixBufferL[j] += (tempSample * v->panL);
-                mixBufferR[j] += (tempSample * v->panR);
-
-                if (v->data != NULL)
-                {
-                    v->fraction += v->delta;
-
-                    if (v->fraction >= 1.0f)
-                    {
-                        v->index++;
-                        v->fraction -= 1.0f;
-
-                        v->lastFraction = v->fraction;
-                        v->lastDelta    = v->delta;
-
-                        PT_ASSERT(v->lastDelta > v->lastFraction);
-
-                        if (v->loopFlag)
-                        {
-                            if (v->index >= v->loopEnd)
-                            {
-                                if (v->swapSampleFlag)
-                                {
-                                    v->swapSampleFlag = false;
-
-                                    if (!v->newLoopFlag)
-                                    {
-                                        v->data = NULL;
-                                        ch->scopeLoopFlag = false;
-
-                                        insertEndingBlep(bSmp, v);
-                                        j++;
-
-                                        break;
-                                    }
-
-                                    updateSampleData(v);
-
-                                    v->index = v->loopBegin;
-
-                                    ch->scopeLoopFlag = true;
-                                    updateScope(ch, v);
-                                }
-                                else
-                                {
-                                    v->index = v->loopBegin;
-
-                                    if (v->loopQuirk)
-                                    {
-                                        v->loopEnd   = v->loopQuirk;
-                                        v->loopQuirk = false;
-                                    }
-                                }
-                            }
-                        }
-                        else
-                        {
-                            if (v->index >= v->length)
-                            {
-                                if (v->swapSampleFlag)
-                                {
-                                    v->swapSampleFlag = false;
-
-                                    if (!v->newLoopFlag)
-                                    {
-                                        v->data = NULL;
-                                        ch->scopeLoopFlag = false;
-
-                                        insertEndingBlep(bSmp, v);
-                                        j++;
-
-                                        break;
-                                    }
-
-                                    updateSampleData(v);
-
-                                    v->index = v->loopBegin;
-
-                                    ch->scopeLoopFlag = true;
-                                    updateScope(ch, v);
-                                }
-                                else
-                                {
-                                    v->data = NULL;
-
-                                    insertEndingBlep(bSmp, v);
-                                    j++;
-
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if ((j < numSamples) && (v->data == NULL) && (bSmp->samplesLeft || bVol->samplesLeft))
-            {
-                for (; j < numSamples; ++j)
-                {
-                    tempSample = bSmp->lastValue;
-                    tempVolume = bVol->lastValue;
-
-                    if (bSmp->samplesLeft) tempSample += blepRun(bSmp);
-                    if (bVol->samplesLeft) tempVolume += blepRun(bVol);
-
-                    tempSample *= tempVolume;
-
-                    mixBufferL[j] += (tempSample * v->panL);
-                    mixBufferR[j] += (tempSample * v->panR);
-                }
-            }
-        }
-
-        if (mutedVol != -1.0f)
-            v->vol = mutedVol;
-    }
-
-    for (j = 0; j < numSamples; ++j)
-    {
-        out[0] = mixBufferL[j];
-        out[1] = mixBufferR[j];
-
-        if (filterFlags & FILTER_LP_ENABLED)
-            lossyIntegrator(&filterLo, out, out);
-
-        if (filterFlags & FILTER_LED_ENABLED)
-            lossyIntegratorLED(filterLEDC, &filterLED, out, out);
-
-        lossyIntegratorHighPass(&filterHi, out, out);
-
-        out[0] *= (-32767.0f / 3.2f); // negative because signal phase is flipped on A500/A1200 for some reason
-        out[1] *= (-32767.0f / 3.2f); // ---
-        out[0]  = CLAMP(out[0], -32768.0f, 32767.0f);
-        out[1]  = CLAMP(out[1], -32768.0f, 32767.0f);
-
-        if (bigEndian)
-        {
-            renderL = SWAP16((int16_t)(out[0]));
-            renderR = SWAP16((int16_t)(out[1]));
-        }
-        else
-        {
-            renderL = (int16_t)(out[0]);
-            renderR = (int16_t)(out[1]);
-        }
-
-        *ptr++ = renderL;
-        *ptr++ = renderR;
-    }
-
-    fwrite(editor.mod2WavBuffer, sizeof (int16_t), 2 * numSamples, fOut);
+    return (samplesPerTick * 2);
 }
 
 int32_t mod2WavThreadFunc(void *ptr)
 {
-    int32_t renderSampleBlock, renderSamplesTodo;
-    uint32_t totalSampleCounter, totalTickCounter, totalRiffChunkLen;
+    uint32_t size, totalSampleCounter, totalRiffChunkLen;
     FILE *fOut;
     wavHeader_t wavHeader;
 
@@ -1458,39 +961,16 @@ int32_t mod2WavThreadFunc(void *ptr)
     // skip wav header place, render data first
     fseek(fOut, sizeof (wavHeader_t), SEEK_SET);
 
-    totalTickCounter    = 0;
-    totalSampleCounter  = 0;
-    renderSampleCounter = 0;
+    wavRenderingDone   = false;
+    totalSampleCounter = 0;
 
-    while (editor.songPlaying && editor.isWAVRendering && !editor.abortMod2Wav)
+    while (editor.isWAVRendering && !(wavRenderingDone || editor.abortMod2Wav))
     {
-        renderSampleBlock = editor.outputFreq / 50;
-        while (renderSampleBlock)
-        {
-            renderSamplesTodo = (renderSampleBlock < renderSampleCounter) ? renderSampleBlock : renderSampleCounter;
-            if (renderSamplesTodo > 0)
-            {
-                outputAudioToFile(fOut, renderSamplesTodo);
+        size = getAudioFrame(editor.mod2WavBuffer);
+        totalSampleCounter += size;
+        fwrite(editor.mod2WavBuffer, sizeof (int16_t), size, fOut);
 
-                renderSampleBlock   -= renderSamplesTodo;
-                renderSampleCounter -= renderSamplesTodo;
-                totalSampleCounter  += renderSamplesTodo;
-            }
-            else
-            {
-                if (!processTick())
-                {
-                    editor.songPlaying = false;
-                    break;
-                }
-
-                totalTickCounter = (totalTickCounter + 1) % 128;
-                if (totalTickCounter == 0)
-                    editor.ui.updateMod2WavDialog = true;
-
-                renderSampleCounter = samplesPerTick;
-            }
-        }
+        editor.ui.updateMod2WavDialog = true;
     }
 
     if (totalSampleCounter & 1)
@@ -1585,26 +1065,28 @@ int8_t renderToWav(char *fileName, int8_t checkIfFileExist)
     return (true);
 }
 
-// for MOD2WAV
+// for MOD2WAV - ONLY used for a visual percentage counter, so accuracy is not important
 void calcMod2WavTotalRows(void)
 {
-    int8_t pattLoopCounter[AMIGA_VOICES], patternLoopRow[AMIGA_VOICES];
-    uint8_t modRow, pBreakFlag, posJumpAssert, pBreakPosition;
-    uint8_t calcingRows, ch, pos, bxxSamePosFlag;
+    // TODO: Should run replayer in a tick loop instead to get estimate..?
+    // This is quite accurate though...
+
+    int8_t n_pattpos[AMIGA_VOICES], n_loopcount[AMIGA_VOICES];
+    uint8_t modRow, pBreakFlag, posJumpAssert, pBreakPosition, calcingRows, ch, pos;
     int16_t modOrder;
     uint16_t modPattern;
     note_t *note;
 
-    memset(pattLoopCounter, 0, sizeof (pattLoopCounter));
-    memset(patternLoopRow,  0, sizeof (patternLoopRow));
+    // for pattern loop
+    memset(n_pattpos,   0, sizeof (n_pattpos));
+    memset(n_loopcount, 0, sizeof (n_loopcount));
 
     modEntry->rowsCounter = 0;
     modEntry->rowsInTotal = 0;
 
-    modRow     = 0;
-    modOrder   = 0;
-    modPattern = modEntry->head.order[0];
-
+    modRow         = 0;
+    modOrder       = 0;
+    modPattern     = modEntry->head.order[0];
     pBreakPosition = 0;
     posJumpAssert  = false;
     pBreakFlag     = false;
@@ -1613,69 +1095,45 @@ void calcMod2WavTotalRows(void)
     memset(editor.rowVisitTable, 0, MOD_ORDERS * MOD_ROWS);
     while (calcingRows)
     {
-        if (modOrder < 0)
-            editor.rowVisitTable[((modEntry->head.orderCount - 1) * MOD_ROWS) + modRow] = true;
-        else
-            editor.rowVisitTable[(modOrder * MOD_ROWS) + modRow] = true;
+        editor.rowVisitTable[(modOrder * MOD_ROWS) + modRow] = true;
 
-        bxxSamePosFlag = false;
         for (ch = 0; ch < AMIGA_VOICES; ++ch)
         {
             note = &modEntry->patterns[modPattern][(modRow * AMIGA_VOICES) + ch];
-
-            // Bxx - Position Jump
-            if (note->command == 0x0B)
+            if (note->command == 0x0B) // Bxx - Position Jump
             {
-                if (note->param == modOrder)
-                    bxxSamePosFlag = true;
-
                 modOrder = note->param - 1;
-
                 pBreakPosition = 0;
                 posJumpAssert  = true;
-                pBreakFlag     = true;
             }
-
-            // Dxx - Pattern Break
-            else if (note->command == 0x0D)
+            else if (note->command == 0x0D) // Dxx - Pattern Break
             {
-                pos = (((note->param >> 4) * 10) + (note->param & 0x0F));
-
-                if (pos > 63)
+                pBreakPosition = (((note->param >> 4) * 10) + (note->param & 0x0F));
+                if (pBreakPosition > 63)
                     pBreakPosition = 0;
-                else
-                    pBreakPosition = pos;
 
                 posJumpAssert = true;
-                pBreakFlag    = true;
             }
-
-            // Fxx - Set Speed
-            else if (note->command == 0x0F)
+            else if ((note->command == 0x0F) && (note->param == 0)) // F00 - Set Speed 0 (stop)
             {
-                if (note->param == 0)
-                {
-                    calcingRows = false;
-                    break;
-                }
+                calcingRows = false;
+                break;
             }
-
-            // E6x - Pattern Loop
-            else if ((note->command == 0x0E) && ((note->param >> 4) == 0x06))
+            else if ((note->command == 0x0E) && ((note->param >> 4) == 0x06)) // E6x - Pattern Loop
             {
                 pos = note->param & 0x0F;
                 if (pos == 0)
                 {
-                    patternLoopRow[ch] = modRow;
+                    n_pattpos[ch] = modRow;
                 }
                 else
                 {
                     // this is so ugly
-                    if (pattLoopCounter[ch] == 0)
+                    if (n_loopcount[ch] == 0)
                     {
-                        pattLoopCounter[ch] = pos;
+                        n_loopcount[ch] = pos;
 
-                        pBreakPosition = patternLoopRow[ch];
+                        pBreakPosition = n_pattpos[ch];
                         pBreakFlag     = true;
 
                         for (pos = pBreakPosition; pos <= modRow; ++pos)
@@ -1683,9 +1141,9 @@ void calcMod2WavTotalRows(void)
                     }
                     else
                     {
-                        if (--pattLoopCounter[ch] != 0)
+                        if (--n_loopcount[ch])
                         {
-                            pBreakPosition = patternLoopRow[ch];
+                            pBreakPosition = n_pattpos[ch];
                             pBreakFlag     = true;
 
                             for (pos = pBreakPosition; pos <= modRow; ++pos)
@@ -1699,30 +1157,23 @@ void calcMod2WavTotalRows(void)
         modRow++;
         modEntry->rowsInTotal++;
 
-        if (posJumpAssert && pBreakFlag && bxxSamePosFlag && (pBreakPosition == (modRow - 1)))
-        {
-            // quirky way used to "stop" some MODs (f.ex. testlast.mod)
-            calcingRows = false;
-            break;
-        }
-
         if (pBreakFlag)
         {
-            pBreakFlag = false;
-
             modRow = pBreakPosition;
             pBreakPosition = 0;
+            pBreakFlag = false;
         }
 
         if ((modRow >= MOD_ROWS) || posJumpAssert)
         {
             modRow = pBreakPosition;
-
-            posJumpAssert  = false;
             pBreakPosition = 0;
+            posJumpAssert  = false;
 
-            if (++modOrder >= modEntry->head.orderCount)
+            modOrder = (modOrder + 1) & 0x7F;
+            if (modOrder >= modEntry->head.orderCount)
             {
+                modOrder = 0;
                 calcingRows = false;
                 break;
             }

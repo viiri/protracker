@@ -18,8 +18,6 @@ int main(int argc, char *argv[])
     uint32_t *pixel_data, p32_1, p32_2, p32_3, p32_4;
     FILE *in, *out;
 
-    printf("bmp2pth by 8bitbubsy\n");
-
 #ifndef _DEBUG
     if (argc != 2)
     {
@@ -37,7 +35,6 @@ int main(int argc, char *argv[])
     if (in == NULL)
     {
         printf("ERROR: Could not open input bitmap!\n");
-
         system("PAUSE");
 
         return (1);
@@ -47,9 +44,7 @@ int main(int argc, char *argv[])
     if (out_filename == NULL)
     {
         printf("ERROR: Out of memory!\n");
-
         fclose(in);
-
         system("PAUSE");
 
         return (1);
@@ -64,7 +59,6 @@ int main(int argc, char *argv[])
 
         free(out_filename);
         fclose(in);
-
         system("PAUSE");
 
         return (1);
@@ -77,7 +71,6 @@ int main(int argc, char *argv[])
 
         fclose(in);
         fclose(out);
-
         system("PAUSE");
 
         return (1);
@@ -99,7 +92,6 @@ int main(int argc, char *argv[])
 
         fclose(in);
         fclose(out);
-
         system("PAUSE");
 
         return (1);
@@ -112,7 +104,6 @@ int main(int argc, char *argv[])
 
         fclose(in);
         fclose(out);
-
         system("PAUSE");
 
         return (1);
@@ -313,7 +304,6 @@ endok:
     fclose(out);
 
     printf("Done successfully.\n");
-    system("PAUSE");
 
     return (0);
 }

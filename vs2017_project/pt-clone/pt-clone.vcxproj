@@ -145,6 +145,7 @@
     <ClCompile Include="..\..\src\gfx\pt_gfx_tracker.c" />
     <ClCompile Include="..\..\src\gfx\pt_gfx_vumeter.c" />
     <ClCompile Include="..\..\src\gfx\pt_gfx_yes_no_dialog.c" />
+    <ClCompile Include="..\..\src\pt_scopes.c" />
     <ClCompile Include="..\..\src\pt_terminal.c" />
     <ClCompile Include="..\..\src\pt_unicode.c" />
     <ClCompile Include="..\..\src\pt_visuals.c" />
@@ -163,6 +164,7 @@
     <ClInclude Include="..\..\src\pt_patternviewer.h" />
     <ClInclude Include="..\..\src\pt_sampleloader.h" />
     <ClInclude Include="..\..\src\pt_sampler.h" />
+    <ClInclude Include="..\..\src\pt_scopes.h" />
     <ClInclude Include="..\..\src\pt_tables.h" />
     <ClInclude Include="..\..\src\pt_terminal.h" />
     <ClInclude Include="..\..\src\pt_textout.h" />
