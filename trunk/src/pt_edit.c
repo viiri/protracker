@@ -21,11 +21,12 @@
 #include "pt_sampler.h"
 #include "pt_visuals.h"
 #include "pt_keyboard.h"
+#include "pt_scopes.h"
 
 void setPattern(int16_t pattern); // pt_modplayer.c
 
 void jamAndPlaceSample(SDL_Keycode keyEntry, int8_t normalModes);
-uint8_t quantizeCheck(moduleChannel_t *ch, uint8_t row);
+uint8_t quantizeCheck(uint8_t row);
 uint8_t handleSpecialKeys(SDL_Scancode keyEntry);
 int8_t keyToNote(SDL_Keycode keyEntry);
 
@@ -484,7 +485,7 @@ void exitGetTextLine(uint8_t updateValue)
                     if (tmp32 > MAX_SAMPLE_LEN)
                         tmp32 = MAX_SAMPLE_LEN;
 
-                    if ((s->loopLength > 2) || (s->loopStart > 0))
+                    if ((s->loopLength + s->loopStart) > 0)
                     {
                         if (tmp32 < (s->loopStart + s->loopLength))
                             tmp32 =  s->loopStart + s->loopLength;
@@ -492,9 +493,8 @@ void exitGetTextLine(uint8_t updateValue)
 
                     if (s->length != tmp32)
                     {
-                        mixerKillVoiceIfReadingSample(editor.currSample);
+                        turnOffVoices();
                         s->length = tmp32;
-                        updateVoiceParams();
 
                         editor.ui.updateCurrSampleLength = true;
                         editor.ui.updateSongSize = true;
@@ -534,9 +534,9 @@ void exitGetTextLine(uint8_t updateValue)
 
                     if (s->loopStart != tmp32)
                     {
-                        mixerKillVoiceIfReadingSample(editor.currSample);
+                        turnOffVoices();
                         s->loopStart = tmp32;
-                        updateVoiceParams();
+                        mixerUpdateLoops();
 
                         editor.ui.updateCurrSampleRepeat = true;
 
@@ -577,9 +577,9 @@ void exitGetTextLine(uint8_t updateValue)
 
                     if (s->loopLength != tmp32)
                     {
-                        mixerKillVoiceIfReadingSample(editor.currSample);
+                        turnOffVoices();
                         s->loopLength = tmp32;
-                        updateVoiceParams();
+                        mixerUpdateLoops();
 
                         editor.ui.updateCurrSampleReplen = true;
                         if (editor.ui.editOpScreenShown && (editor.ui.editOpScreen == 3))
@@ -876,19 +876,25 @@ uint8_t handleSpecialKeys(SDL_Scancode keyEntry)
 void jamAndPlaceSample(SDL_Keycode keyEntry, int8_t normalMode)
 {
     int8_t noteVal;
+    uint8_t ch;
     int16_t tempPeriod;
     uint16_t cleanPeriod;
+    moduleChannel_t *chn;
     moduleSample_t *s;
     note_t *note;
-    moduleChannel_t *chn;
 
-    chn  = &modEntry->channels[editor.cursor.channel];
-    note = &modEntry->patterns[modEntry->currPattern][(quantizeCheck(chn, modEntry->currRow) * AMIGA_VOICES) + editor.cursor.channel];
+    ch = editor.cursor.channel;
+    PT_ASSERT(ch < AMIGA_VOICES);
+    if (ch >= AMIGA_VOICES)
+        return;
+
+    chn  = &modEntry->channels[ch];
+    note = &modEntry->patterns[modEntry->currPattern][(quantizeCheck(modEntry->currRow) * AMIGA_VOICES) + ch];
 
     noteVal = normalMode ? keyToNote(keyEntry) : pNoteTable[editor.currSample];
     if (noteVal >= 0)
     {
-        s  = &modEntry->samples[editor.currSample];
+        s = &modEntry->samples[editor.currSample];
 
         tempPeriod  = periodTable[(37 * s->fineTune) + noteVal];
         cleanPeriod = periodTable[noteVal];
@@ -896,58 +902,37 @@ void jamAndPlaceSample(SDL_Keycode keyEntry, int8_t normalMode)
         editor.currPlayNote = noteVal;
 
         // play current sample
-        if (!editor.muted[editor.cursor.channel])
+        if (!editor.muted[ch])
         {
             // don't play sample if we quantized to another row (will be played in modplayer instead)
-            if (!((editor.currMode == MODE_RECORD) && chn->didQuantize))
+            if (!((editor.currMode == MODE_RECORD) && editor.didQuantize))
             {
                 if (s->length == 0)
                 {
-                    // shutdown scope
-                    chn->scopeLoopQuirk_f = 0.0;
-                    chn->scopeLoopQuirk   = false;
-                    chn->scopeEnabled     = false;
-                    chn->scopeTrigger     = false;
-
-                    // shutdown voice
-                    mixerKillVoice(editor.cursor.channel);
+                    mixerKillVoice(ch);
                 }
                 else
                 {
-                    chn->sample     = editor.currSample + 1;
-                    chn->volume     = s->volume;
-                    chn->period     = tempPeriod;
-                    chn->tempPeriod = tempPeriod;
+                    chn->n_samplenum = editor.currSample;
+                    chn->n_volume    = s->volume;
+                    chn->n_period    = tempPeriod;
+                    chn->n_start     = &modEntry->sampleData[s->offset];
+                    chn->n_length    = (s->loopStart > 0) ? (s->loopStart + s->loopLength) : s->length; // yes, this is correct. Do not touch
+                    chn->n_loopstart = &modEntry->sampleData[s->offset + s->loopStart];
+                    chn->n_replen    = s->loopLength;
 
-                    chn->scopeEnabled    = true;
-                    chn->scopeKeepDelta  = false;
-                    chn->scopeKeepVolume = false;
-                    chn->scopeVolume     = volumeToScopeVolume(s->volume);
-                    periodToScopeDelta(chn, tempPeriod);
-                    chn->scopeLoopFlag   = (s->loopStart + s->loopLength) > 2;
+                    if (chn->n_length == 0)
+                        chn->n_length = 2;
 
-                    chn->scopePos_f = s->offset;
+                    paulaSetVolume(ch, chn->n_volume);
+                    paulaSetPeriod(ch, chn->n_period);
+                    paulaSetData(ch,   chn->n_start);
+                    paulaSetLength(ch, chn->n_length);
+                    paulaRestartDMA(ch);
 
-                    chn->scopeEnd        = s->offset + s->length;
-                    chn->scopeLoopBegin  = s->offset + s->loopStart;
-                    chn->scopeLoopEnd    = s->offset + s->loopStart + s->loopLength;
-
-                    // one-shot loop simulation (real PT didn't show this in the scopes...)
-                    chn->scopeLoopQuirk = false;
-                    if ((s->loopLength > 2) && (s->loopStart == 0))
-                    {
-                        chn->scopeLoopQuirk = chn->scopeLoopEnd;
-                        chn->scopeLoopEnd   = chn->scopeEnd;
-                    }
-
-                    chn->scopeLoopQuirk_f = chn->scopeLoopQuirk;
-                    chn->scopeEnd_f       = chn->scopeEnd;
-                    chn->scopeLoopBegin_f = chn->scopeLoopBegin;
-                    chn->scopeLoopEnd_f   = chn->scopeLoopEnd;
-
-                    mixerSetVoiceSource(editor.cursor.channel, modEntry->sampleData + s->offset, s->length, s->loopStart, s->loopLength, 0);
-                    mixerSetVoiceDelta(editor.cursor.channel, tempPeriod);
-                    mixerSetVoiceVol(editor.cursor.channel, s->volume);
+                    // these take effect after the current DMA cycle is done
+                    paulaSetData(ch,   chn->n_loopstart);
+                    paulaSetLength(ch, chn->n_replen);
                 }
             }
         }
@@ -984,9 +969,7 @@ void jamAndPlaceSample(SDL_Keycode keyEntry, int8_t normalMode)
             }
         }
 
-        // update spectrum bars if neeeded
-        if ((editor.ui.visualizerMode == VISUAL_SPECTRUM) && !editor.muted[editor.cursor.channel])
-            updateSpectrumAnalyzer(tempPeriod, s->volume);
+        updateSpectrumAnalyzer(editor.cursor.channel, s->volume, tempPeriod);
     }
     else if (noteVal == -2)
     {
@@ -1008,13 +991,13 @@ void jamAndPlaceSample(SDL_Keycode keyEntry, int8_t normalMode)
     }
 }
 
-uint8_t quantizeCheck(moduleChannel_t *ch, uint8_t row)
+uint8_t quantizeCheck(uint8_t row)
 {
     uint8_t tempRow, quantize;
 
     quantize = (uint8_t)(editor.quantizeValue);
 
-    ch->didQuantize = false;
+    editor.didQuantize = false;
 
     if (editor.currMode == MODE_RECORD)
     {
@@ -1027,14 +1010,14 @@ uint8_t quantizeCheck(moduleChannel_t *ch, uint8_t row)
             if (editor.modTick > (editor.modSpeed / 2))
             {
                 row = (row + 1) & 0x3F;
-                ch->didQuantize = true;
+                editor.didQuantize = true;
             }
         }
         else
         {
             tempRow = ((((quantize / 2) + row) & 0x3F) / quantize) * quantize;
             if (tempRow > row)
-                ch->didQuantize = true;
+                editor.didQuantize = true;
 
             return (tempRow);
         }
@@ -1086,7 +1069,7 @@ void copySampleTrack(void)
         smpTo   = &modEntry->samples[editor.sampleTo   - 1];
         smpFrom = &modEntry->samples[editor.sampleFrom - 1];
 
-        mixerKillVoiceIfReadingSample(editor.sampleTo - 1);
+        turnOffVoices();
 
         // copy
         tmpOffset     = smpTo->offset;
@@ -1162,8 +1145,7 @@ void exchSampleTrack(void)
         smpTo   = &modEntry->samples[editor.sampleTo   - 1];
         smpFrom = &modEntry->samples[editor.sampleFrom - 1];
 
-        mixerKillVoiceIfReadingSample(editor.sampleFrom - 1);
-        mixerKillVoiceIfReadingSample(editor.sampleTo   - 1);
+        turnOffVoices();
 
         // swap offsets first so that the next swap will leave offsets intact
         tmpOffset       = smpFrom->offset;

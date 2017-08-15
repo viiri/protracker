@@ -435,7 +435,6 @@ void mouseButtonUpHandler(uint8_t mouseButton)
                 if (editor.ui.samplerScreenShown)
                     redrawSample();
 
-                updateVoiceParams();
                 recalcChordLength();
                 updateSamplePos();
 
@@ -1347,7 +1346,10 @@ void sampleLengthUpButton(int8_t fast)
 {
     int32_t val;
 
-    mixerKillVoiceIfReadingSample(editor.currSample);
+    if (modEntry->samples[editor.currSample].length == 0x1FFFE)
+        return;
+
+    turnOffVoices();
 
     val = modEntry->samples[editor.currSample].length;
 
@@ -1379,8 +1381,19 @@ void sampleLengthDownButton(int8_t fast)
     int32_t val;
     moduleSample_t *s;
 
-    mixerKillVoiceIfReadingSample(editor.currSample);
+    s = &modEntry->samples[editor.currSample];
+    if ((s->loopLength + s->loopStart) > 0)
+    {
+        if (s->length == (s->loopStart + s->loopLength))
+            return;
+    }
+    else
+    {
+        if (s->length == 0)
+            return;
+    }
 
+    turnOffVoices();
     val = modEntry->samples[editor.currSample].length;
 
     if (input.mouse.rightButtonPressed)
@@ -1401,10 +1414,8 @@ void sampleLengthDownButton(int8_t fast)
     if (val < 0)
         val = 0;
 
-    s = &modEntry->samples[editor.currSample];
-
     s->length = val;
-    if ((s->loopLength > 2) || (s->loopStart > 0))
+    if ((s->loopStart + s->loopLength) > 0)
     {
         if (s->length < (s->loopStart + s->loopLength))
             s->length =  s->loopStart + s->loopLength;
@@ -1425,7 +1436,6 @@ void sampleRepeatUpButton(int8_t fast)
     if (len == 0)
     {
         modEntry->samples[editor.currSample].loopStart = 0;
-
         return;
     }
 
@@ -1450,7 +1460,7 @@ void sampleRepeatUpButton(int8_t fast)
     modEntry->samples[editor.currSample].loopStart = val;
     editor.ui.updateCurrSampleRepeat = true;
 
-    updateVoiceParams();
+    mixerUpdateLoops();
 
     if (editor.ui.samplerScreenShown)
         setLoopSprites();
@@ -1469,7 +1479,6 @@ void sampleRepeatDownButton(int8_t fast)
     if (len == 0)
     {
         modEntry->samples[editor.currSample].loopStart = 0;
-
         return;
     }
 
@@ -1494,7 +1503,7 @@ void sampleRepeatDownButton(int8_t fast)
     modEntry->samples[editor.currSample].loopStart = val;
     editor.ui.updateCurrSampleRepeat = true;
 
-    updateVoiceParams();
+    mixerUpdateLoops();
 
     if (editor.ui.samplerScreenShown)
         setLoopSprites();
@@ -1514,7 +1523,6 @@ void sampleRepeatLengthUpButton(int8_t fast)
     if (len == 0)
     {
         modEntry->samples[editor.currSample].loopLength = 2;
-
         return;
     }
 
@@ -1539,7 +1547,7 @@ void sampleRepeatLengthUpButton(int8_t fast)
     modEntry->samples[editor.currSample].loopLength = val;
     editor.ui.updateCurrSampleReplen = true;
 
-    updateVoiceParams();
+    mixerUpdateLoops();
 
     if (editor.ui.samplerScreenShown)
         setLoopSprites();
@@ -1582,7 +1590,7 @@ void sampleRepeatLengthDownButton(int8_t fast)
     modEntry->samples[editor.currSample].loopLength = val;
     editor.ui.updateCurrSampleReplen = true;
 
-    updateVoiceParams();
+    mixerUpdateLoops();
 
     if (editor.ui.samplerScreenShown)
         setLoopSprites();
@@ -1925,15 +1933,7 @@ void handleSamplerVolumeBox(void)
             (input.mouse.y >= 222) && (input.mouse.y <= 243))
         {
             for (i = 0; i < AMIGA_VOICES; ++i)
-            {
-                // shutdown scope
-                modEntry->channels[i].scopeLoopQuirk = false;
-                modEntry->channels[i].scopeEnabled   = false;
-                modEntry->channels[i].scopeTrigger   = false;
-
-                // shutdown voice
                 mixerKillVoice(i);
-            }
 
             return;
         }
@@ -2347,15 +2347,7 @@ void handleSamplerFiltersBox(void)
             (input.mouse.y >= 222) && (input.mouse.y <= 243))
         {
             for (i = 0; i < AMIGA_VOICES; ++i)
-            {
-                // shutdown scope
-                modEntry->channels[i].scopeLoopQuirk = false;
-                modEntry->channels[i].scopeEnabled   = false;
-                modEntry->channels[i].scopeTrigger   = false;
-
-                // shutdown voice
                 mixerKillVoice(i);
-            }
 
             return;
         }
@@ -3791,7 +3783,7 @@ int8_t handleLeftMouseButton(void)
                         break;
                     }
 
-                    mixerKillVoiceIfReadingSample(editor.currSample);
+                    turnOffVoices();
 
                     memcpy(&modEntry->sampleData[s->offset], &modEntry->sampleData[s->offset + editor.samplePos], MAX_SAMPLE_LEN - editor.samplePos);
                     memset(&modEntry->sampleData[s->offset + (MAX_SAMPLE_LEN - editor.samplePos)], 0, editor.samplePos);
@@ -4651,11 +4643,11 @@ int8_t handleLeftMouseButton(void)
                     {
                         s = &modEntry->samples[editor.currSample];
 
-                        mixerKillVoiceIfReadingSample(editor.currSample);
+                        turnOffVoices();
 
                         s->length = 0;
 
-                        if ((s->loopLength > 2) || (s->loopStart > 0))
+                        if ((s->loopStart + s->loopLength) > 0)
                         {
                             if (s->length < (s->loopStart + s->loopLength))
                                 s->length =  s->loopStart + s->loopLength;
@@ -4667,7 +4659,6 @@ int8_t handleLeftMouseButton(void)
                         if (editor.ui.samplerScreenShown)
                             redrawSample();
 
-                        updateVoiceParams();
                         recalcChordLength();
                         updateWindowTitle(MOD_IS_MODIFIED);
                     }
@@ -4711,7 +4702,7 @@ int8_t handleLeftMouseButton(void)
                         if (editor.ui.samplerScreenShown)
                             setLoopSprites();
 
-                        updateVoiceParams();
+                        mixerUpdateLoops();
                         updateWindowTitle(MOD_IS_MODIFIED);
                     }
                     else
@@ -4756,7 +4747,7 @@ int8_t handleLeftMouseButton(void)
                         if (editor.ui.samplerScreenShown)
                             setLoopSprites();
 
-                        updateVoiceParams();
+                        mixerUpdateLoops();
                         updateWindowTitle(MOD_IS_MODIFIED);
                     }
                     else
@@ -4925,15 +4916,7 @@ int8_t handleLeftMouseButton(void)
                 case PTB_SA_STOP:
                 {
                     for (i = 0; i < AMIGA_VOICES; ++i)
-                    {
-                        // shutdown scope
-                        modEntry->channels[i].scopeLoopQuirk = false;
-                        modEntry->channels[i].scopeEnabled   = false;
-                        modEntry->channels[i].scopeTrigger   = false;
-
-                        // shutdown voice
                         mixerKillVoice(i);
-                    }
                 }
                 break;
 
@@ -5673,7 +5656,7 @@ void updateMouseCounters(void)
 {
     if (input.mouse.buttonWaiting)
     {
-        if (++input.mouse.buttonWaitCounter > 8)
+        if (++input.mouse.buttonWaitCounter > (VBLANK_HZ / 4)) // 4th of a second
         {
             input.mouse.buttonWaitCounter = 0;
             input.mouse.buttonWaiting = false;
@@ -5682,7 +5665,7 @@ void updateMouseCounters(void)
 
     if (editor.errorMsgActive)
     {
-        if (++editor.errorMsgCounter >= 60)
+        if (++editor.errorMsgCounter >= VBLANK_HZ) // one second
         {
             editor.errorMsgCounter = 0;
 

@@ -58,7 +58,7 @@ module_t *createNewMod(void)
         }
     }
 
-    newMod->sampleData = (int8_t *)(calloc(MOD_SAMPLES, MAX_SAMPLE_LEN));
+    newMod->sampleData = (int8_t *)(calloc(MOD_SAMPLES + 1, MAX_SAMPLE_LEN)); // +1 sample slot for overflow safety (scopes etc)
     if (newMod->sampleData == NULL)
     {
         showErrorMsgBox("Out of memory!");
@@ -79,6 +79,9 @@ module_t *createNewMod(void)
         newMod->samples[i].loopStartDisp  = &newMod->samples[i].loopStart;
         newMod->samples[i].loopLengthDisp = &newMod->samples[i].loopLength;
     }
+
+    for (i = 0; i < AMIGA_VOICES; ++i)
+        newMod->channels[i].n_chanindex = i;
 
     // setup GUI text pointers
     editor.currEditPatternDisp = &newMod->currPattern;
@@ -175,7 +178,7 @@ int8_t modSave(char *fileName)
     for (i = 0; i < MOD_SAMPLES; ++i)
     {
         // Amiga ProTracker "BEEEEEEEEP" sample fix
-        if ((modEntry->samples[i].length >= 2) && (modEntry->samples[i].loopLength == 2))
+        if ((modEntry->samples[i].length >= 2) && ((modEntry->samples[i].loopStart + modEntry->samples[i].loopLength) == 2))
         {
             fputc(0, fmodule);
             fputc(0, fmodule);
@@ -723,10 +726,7 @@ module_t *modLoad(UNICHAR *fileName)
     for (i = 0; i < numSamples; ++i)
         newModule->samples[i].offset = MAX_SAMPLE_LEN * i;
 
-    // init 31*MAX_SAMPLE_LEN worth of sample data so that you can
-    // easily load bigger samples if you're editing the song.
-    // That's ~4MB. We have loads of RAM nowadays... No problem!
-    newModule->sampleData = (int8_t *)(calloc(MOD_SAMPLES, MAX_SAMPLE_LEN));
+    newModule->sampleData = (int8_t *)(calloc(MOD_SAMPLES + 1, MAX_SAMPLE_LEN)); // +1 sample slot for overflow safety (scopes etc)
     if (newModule->sampleData == NULL)
     {
         mclose(&mod);
@@ -777,10 +777,20 @@ module_t *modLoad(UNICHAR *fileName)
                 s->length += ((s->loopStart + s->loopLength) - s->length);
             }
         }
+
+        // fix beeping samples
+        if ((s->length >= 2) && ((s->loopStart + s->loopLength) <= 2))
+        {
+            newModule->sampleData[s->offset + 0] = 0;
+            newModule->sampleData[s->offset + 1] = 0;
+        }
     }
 
     mclose(&mod);
     free(modBuffer);
+
+    for (i = 0; i < AMIGA_VOICES; ++i)
+        newModule->channels[i].n_chanindex = i;
 
     return (newModule);
 }
@@ -1190,6 +1200,9 @@ void setupNewMod(void)
         fillSampleRedoBuffer(i);
     }
 
+    modSetPos(0, 0);
+    modSetPattern(0); // set pattern to 00 instead of first order's pattern
+
     editor.currEditPatternDisp = &modEntry->currPattern;
     editor.currPosDisp         = &modEntry->currOrder;
     editor.currPatternDisp     = &modEntry->head.order[0];
@@ -1215,8 +1228,6 @@ void setupNewMod(void)
     setLEDFilter(false); // real PT doesn't do this there, but that's insane
 
     memset(editor.ui.pattNames, 0, MAX_PATTERNS * 16);
-
-    modSetPos(0, 0);
 
     updateWindowTitle(MOD_NOT_MODIFIED);
 
@@ -1254,8 +1265,6 @@ void setupNewMod(void)
         modSetTempo(modEntry->head.initBPM);
     else
         modSetTempo(125);
-
-    modSetPos(0, 0);
 
     updateCurrSample();
     editor.samplePos = 0;

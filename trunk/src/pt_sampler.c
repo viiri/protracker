@@ -13,6 +13,7 @@
 #include "pt_blep.h"
 #include "pt_mouse.h"
 #include "pt_terminal.h"
+#include "pt_scopes.h"
 
 // rounded constant to fit in float
 #define M_PI_F 3.1415927f
@@ -683,7 +684,7 @@ void redoSampleData(int8_t sample)
 
     s = &modEntry->samples[sample];
 
-    mixerKillVoiceIfReadingSample(sample);
+    turnOffVoices();
 
     memset(&modEntry->sampleData[s->offset], 0, MAX_SAMPLE_LEN);
     if ((editor.smpRedoBuffer[sample] != NULL) && (editor.smpRedoLengths[sample] > 0))
@@ -909,7 +910,7 @@ void mixChordSample(void)
 
     // setup some variables
 
-    mixerKillVoiceIfReadingSample(editor.currSample);
+    turnOffVoices();
 
     smpLength    = modEntry->samples[editor.currSample].length;
     smpLoopStart = modEntry->samples[editor.currSample].loopStart;
@@ -1129,8 +1130,8 @@ void samplerResample(void)
     if (writeLength > MAX_SAMPLE_LEN)
         writeLength = MAX_SAMPLE_LEN;
 
-    // copy old sample data into temp buffer and kill mixer voices if needed
-    mixerKillVoiceIfReadingSample(editor.currSample);
+    // kill mixer voices and copy old sample data into temp buffer
+    turnOffVoices();
     memcpy(oldSampleData, newSampleData, readLength);
 
     // resample!
@@ -1242,7 +1243,7 @@ void doMix(void)
         return;
     }
 
-    mixerKillVoiceIfReadingSample(smpTo);
+    turnOffVoices();
 
     if (mixLength <= MAX_SAMPLE_LEN)
     {
@@ -1396,23 +1397,16 @@ void toggleTuningTone(void)
     if (editor.tuningFlag && (editor.tuningNote <= 35))
     {
         // tuning tone toggled on
-        mixerSetVoiceVol(i, editor.tuningVol);
-        mixerSetVoiceDelta(i, periodTable[editor.tuningNote]);
-        mixerSetVoiceSource(i, tuneToneData, sizeof (tuneToneData), 0, sizeof (tuneToneData), 0);
+        paulaSetVolume(i, editor.tuningVol);
+        paulaSetPeriod(i, periodTable[editor.tuningNote]);
+        paulaSetData(i, tuneToneData);
+        paulaSetLength(i, sizeof (tuneToneData));
+        paulaRestartDMA(i);
     }
     else
     {
         // tuning tone toggled off
-        for (i = 0; i < AMIGA_VOICES; ++i)
-        {
-            // shutdown scope
-            modEntry->channels[i].scopeLoopQuirk_f = 0.0;
-            modEntry->channels[i].scopeEnabled     = false;
-            modEntry->channels[i].scopeTrigger     = false;
-
-            // shutdown voice
-            mixerKillVoice(i);
-        }
+        mixerKillVoice(i);
     }
 }
 
@@ -1561,7 +1555,7 @@ void samplerSamDelete(uint8_t cut)
         return;
     }
 
-    mixerKillVoiceIfReadingSample(editor.currSample);
+    turnOffVoices();
 
     // if whole sample is marked, nuke it
     if ((editor.markEndOfs - editor.markStartOfs) >= sampleLength)
@@ -1704,7 +1698,6 @@ void samplerSamDelete(uint8_t cut)
 
     invertRange();
 
-    updateVoiceParams();
     editor.samplePos = editor.markStartOfs;
     updateSamplePos();
     removeTempLoopPoints();
@@ -1767,7 +1760,7 @@ void samplerSamPaste(void)
 
     readPos = 0;
 
-    mixerKillVoiceIfReadingSample(editor.currSample);
+    turnOffVoices();
 
     wasZooming = (editor.sampler.samDisplay != editor.sampler.samLength) ? true : false;
 
@@ -1835,7 +1828,6 @@ void samplerSamPaste(void)
     editor.markEndOfs = editor.markStartOfs + editor.sampler.copyBufSize;
     invertRange();
 
-    updateVoiceParams();
     editor.samplePos = editor.markEndOfs;
     updateSamplePos();
     removeTempLoopPoints();
@@ -1854,149 +1846,126 @@ void samplerSamPaste(void)
 
 void samplerPlayWaveform(void)
 {
+    uint8_t chn;
     int16_t tempPeriod;
+    moduleChannel_t *ch;
     moduleSample_t *s;
-    moduleChannel_t *chn;
 
     PT_ASSERT((editor.currSample >= 0) && (editor.currSample <= 30));
     if ((editor.currSample < 0) || (editor.currSample > 30))
         return;
 
-    PT_ASSERT(editor.cursor.channel <= 3);
-    if (editor.cursor.channel > 3)
+    chn = editor.cursor.channel;
+    PT_ASSERT(chn < AMIGA_VOICES);
+    if (chn >= AMIGA_VOICES)
         return;
 
-    s   = &modEntry->samples[editor.currSample];
-    chn = &modEntry->channels[editor.cursor.channel];
-
+    s = &modEntry->samples[editor.currSample];
     if (s->length == 0)
     {
-        // shutdown scope
-        chn->scopeLoopQuirk_f = 0.0;
-        chn->scopeLoopQuirk   = false;
-        chn->scopeEnabled     = false;
-        chn->scopeTrigger     = false;
-
-        // shutdown voice
-        mixerKillVoice(editor.cursor.channel);
+        mixerKillVoice(chn);
     }
     else
     {
         if ((editor.currPlayNote > 35) || (s->fineTune > 15))
             return;
 
-        tempPeriod = periodTable[(37 * s->fineTune) + editor.currPlayNote];
+        ch = &modEntry->channels[chn];
 
-        chn->sample     = editor.currSample + 1;
-        chn->volume     = s->volume;
-        chn->period     = tempPeriod;
-        chn->tempPeriod = tempPeriod;
+        tempPeriod      = periodTable[(37 * s->fineTune) + editor.currPlayNote];
+        ch->n_samplenum = editor.currSample;
+        ch->n_volume    = s->volume;
+        ch->n_period    = tempPeriod;
+        ch->n_start     = &modEntry->sampleData[s->offset];
+        ch->n_length    = (s->loopStart > 0) ? (s->loopStart + s->loopLength) : s->length; // yes, this is correct. Do not touch
+        ch->n_loopstart = &modEntry->sampleData[s->offset + s->loopStart];
+        ch->n_replen    = s->loopLength;
 
-        chn->scopeEnabled     = true;
-        chn->scopeKeepDelta   = false;
-        chn->scopeKeepVolume  = false;
-        chn->scopeVolume      = volumeToScopeVolume(s->volume);
-        chn->scopeLoopFlag    = (s->loopStart + s->loopLength) > 2;
-        periodToScopeDelta(chn, tempPeriod);
+        if (ch->n_length == 0)
+            ch->n_length = 2;
 
-        chn->scopePos_f = s->offset;
+        paulaSetVolume(chn, ch->n_volume);
+        paulaSetPeriod(chn, ch->n_period);
+        paulaSetData(chn,   ch->n_start);
+        paulaSetLength(chn, ch->n_length);
+        paulaRestartDMA(chn);
 
-        chn->scopeEnd       = s->offset + s->length;
-        chn->scopeLoopBegin = s->offset + s->loopStart;
-        chn->scopeLoopEnd   = s->offset + s->loopStart + s->loopLength;
+        // these take effect after the current DMA cycle is done
+        paulaSetData(chn,   ch->n_loopstart);
+        paulaSetLength(chn, ch->n_replen);
 
-        // one-shot loop simulation (real PT didn't show this in the scopes...)
-        chn->scopeLoopQuirk = false;
-        if ((s->loopLength > 2) && (s->loopStart == 0))
-        {
-            chn->scopeLoopQuirk = chn->scopeLoopEnd;
-            chn->scopeLoopEnd   = chn->scopeEnd;
-        }
-
-        chn->scopeLoopQuirk_f = chn->scopeLoopQuirk;
-        chn->scopeLoopEnd_f   = chn->scopeLoopEnd;
-        chn->scopeLoopBegin_f = chn->scopeLoopBegin;
-        chn->scopeEnd_f       = chn->scopeEnd;
-
-        mixerSetVoiceSource(editor.cursor.channel, &modEntry->sampleData[s->offset], s->length, s->loopStart, s->loopLength, 0);
-        mixerSetVoiceDelta(editor.cursor.channel, tempPeriod);
-        mixerSetVoiceVol(editor.cursor.channel, s->volume);
+        updateSpectrumAnalyzer(chn, ch->n_volume, ch->n_period);
     }
 }
 
 void samplerPlayDisplay(void)
 {
+    uint8_t chn;
     int16_t tempPeriod;
+    moduleChannel_t *ch;
     moduleSample_t *s;
-    moduleChannel_t *chn;
 
     PT_ASSERT((editor.currSample >= 0) && (editor.currSample <= 30));
     if ((editor.currSample < 0) || (editor.currSample > 30))
         return;
 
-    PT_ASSERT(editor.cursor.channel <= 3);
-    if (editor.cursor.channel > 3)
+    chn = editor.cursor.channel;
+    PT_ASSERT(chn < AMIGA_VOICES);
+    if (chn >= AMIGA_VOICES)
         return;
 
-    s   = &modEntry->samples[editor.currSample];
-    chn = &modEntry->channels[editor.cursor.channel];
-
+    s = &modEntry->samples[editor.currSample];
     if (s->length == 0)
     {
-        // shutdown scope
-        chn->scopeLoopQuirk_f = 0.0;
-        chn->scopeLoopQuirk   = false;
-        chn->scopeEnabled     = false;
-        chn->scopeTrigger     = false;
-
-        // shutdown voice
-        mixerKillVoice(editor.cursor.channel);
+        mixerKillVoice(chn);
     }
     else
     {
         if ((editor.currPlayNote > 35) || (s->fineTune > 15))
             return;
 
-        tempPeriod = periodTable[(37 * s->fineTune) + editor.currPlayNote];
+        ch = &modEntry->channels[chn];
 
-        chn->sample     = editor.currSample + 1;
-        chn->volume     = s->volume;
-        chn->period     = tempPeriod;
-        chn->tempPeriod = tempPeriod;
+        tempPeriod      = periodTable[(37 * s->fineTune) + editor.currPlayNote];
+        ch->n_samplenum = editor.currSample;
+        ch->n_period    = tempPeriod;
+        ch->n_volume    = s->volume;
+        ch->n_start     = &modEntry->sampleData[s->offset + editor.sampler.samOffset];
+        ch->n_length    = editor.sampler.samDisplay;
+        ch->n_loopstart = &modEntry->sampleData[s->offset];
+        ch->n_replen    = 2;
 
-        chn->scopeLoopQuirk   = false;
-        chn->scopeLoopQuirk_f = 0.0;
+        if (ch->n_length == 0)
+            ch->n_length = 2;
 
-        chn->scopeEnabled     = true;
-        chn->scopeKeepDelta   = false;
-        chn->scopeKeepVolume  = false;
-        chn->scopeVolume      = volumeToScopeVolume(s->volume);
-        chn->scopeLoopFlag    = false;
-        chn->scopePos_f       = s->offset + editor.sampler.samOffset;
-        periodToScopeDelta(chn, tempPeriod);
+        paulaSetVolume(chn, ch->n_volume);
+        paulaSetPeriod(chn, ch->n_period);
+        paulaSetData(chn,   ch->n_start);
+        paulaSetLength(chn, ch->n_length);
+        paulaRestartDMA(chn);
 
-        chn->scopeEnd   = s->offset + (editor.sampler.samOffset + editor.sampler.samDisplay);
-        chn->scopeEnd_f = chn->scopeEnd;
+        // these take effect after the current DMA cycle is done
+        paulaSetData(chn,   ch->n_loopstart);
+        paulaSetLength(chn, ch->n_replen);
 
-        mixerSetVoiceSource(editor.cursor.channel, &modEntry->sampleData[s->offset], editor.sampler.samOffset + editor.sampler.samDisplay, 0, 2, 0);
-        mixerSetVoiceOffset(editor.cursor.channel, editor.sampler.samOffset);
-        mixerSetVoiceDelta(editor.cursor.channel, tempPeriod);
-        mixerSetVoiceVol(editor.cursor.channel, s->volume);
+        updateSpectrumAnalyzer(chn, ch->n_volume, ch->n_period);
     }
 }
 
 void samplerPlayRange(void)
 {
+    uint8_t chn;
     int16_t tempPeriod;
+    moduleChannel_t *ch;
     moduleSample_t *s;
-    moduleChannel_t *chn;
 
     PT_ASSERT((editor.currSample >= 0) && (editor.currSample <= 30));
     if ((editor.currSample < 0) || (editor.currSample > 30))
         return;
 
-    PT_ASSERT(editor.cursor.channel <= 3);
-    if (editor.cursor.channel > 3)
+    chn = editor.cursor.channel;
+    PT_ASSERT(chn < AMIGA_VOICES);
+    if (chn >= AMIGA_VOICES)
         return;
 
     if (editor.markEndOfs == 0)
@@ -2011,50 +1980,41 @@ void samplerPlayRange(void)
         return;
     }
 
-    s   = &modEntry->samples[editor.currSample];
-    chn = &modEntry->channels[editor.cursor.channel];
-
+    s = &modEntry->samples[editor.currSample];
     if (s->length == 0)
     {
-        // shutdown scope
-        chn->scopeLoopQuirk_f = 0.0;
-        chn->scopeLoopQuirk   = false;
-        chn->scopeEnabled     = false;
-        chn->scopeTrigger     = false;
-
-        // shutdown voice
-        mixerKillVoice(editor.cursor.channel);
+        mixerKillVoice(chn);
     }
     else
     {
         if ((editor.currPlayNote > 35) || (s->fineTune > 15))
             return;
 
-        tempPeriod = periodTable[(37 * s->fineTune) + editor.currPlayNote];
+        ch = &modEntry->channels[chn];
 
-        chn->sample     = editor.currSample + 1;
-        chn->volume     = s->volume;
-        chn->period     = tempPeriod;
-        chn->tempPeriod = tempPeriod;
+        tempPeriod      = periodTable[(37 * s->fineTune) + editor.currPlayNote];
+        ch->n_samplenum = editor.currSample;
+        ch->n_period    = tempPeriod;
+        ch->n_volume    = s->volume;
+        ch->n_start     = &modEntry->sampleData[s->offset + editor.markStartOfs];
+        ch->n_length    = editor.markEndOfs - editor.markStartOfs;
+        ch->n_loopstart = &modEntry->sampleData[s->offset];
+        ch->n_replen    = 2;
 
-        chn->scopeLoopQuirk   = false;
-        chn->scopeLoopQuirk_f = 0.0;
+        if (ch->n_length == 0)
+            ch->n_length = 2;
 
-        chn->scopeEnabled     = true;
-        chn->scopeKeepDelta   = false;
-        chn->scopeKeepVolume  = false;
-        chn->scopeVolume      = volumeToScopeVolume(s->volume);
-        chn->scopeLoopFlag    = false;
-        chn->scopePos_f       = s->offset + editor.markStartOfs;
-        periodToScopeDelta(chn, tempPeriod);
+        paulaSetVolume(chn, ch->n_volume);
+        paulaSetPeriod(chn, ch->n_period);
+        paulaSetData(chn,   ch->n_start);
+        paulaSetLength(chn, ch->n_length);
+        paulaRestartDMA(chn);
 
-        chn->scopeEnd   = s->offset + editor.markEndOfs;
-        chn->scopeEnd_f = chn->scopeEnd;
+        // these take effect after the current DMA cycle is done
+        paulaSetData(chn,   ch->n_loopstart);
+        paulaSetLength(chn, ch->n_replen);
 
-        mixerSetVoiceSource(editor.cursor.channel, &modEntry->sampleData[s->offset], editor.markEndOfs, 0, 2, 0);
-        mixerSetVoiceOffset(editor.cursor.channel, editor.markStartOfs);
-        mixerSetVoiceDelta(editor.cursor.channel, tempPeriod);
-        mixerSetVoiceVol(editor.cursor.channel, s->volume);
+        updateSpectrumAnalyzer(chn, ch->n_volume, ch->n_period);
     }
 }
 
@@ -2516,7 +2476,7 @@ void samplerSamplePressed(int8_t mouseButtonHeld)
             editor.ui.updateCurrSampleReplen = true;
 
             setLoopSprites();
-            updateVoiceParams();
+            mixerUpdateLoops();
             updateWindowTitle(MOD_IS_MODIFIED);
         }
 
@@ -2542,7 +2502,7 @@ void samplerSamplePressed(int8_t mouseButtonHeld)
             editor.ui.updateCurrSampleReplen = true;
 
             setLoopSprites();
-            updateVoiceParams();
+            mixerUpdateLoops();
             updateWindowTitle(MOD_IS_MODIFIED);
         }
 
@@ -2560,6 +2520,10 @@ void samplerSamplePressed(int8_t mouseButtonHeld)
         invertRange();
         editor.markStartOfs = scr2SmpPos(editor.ui.sampleMarkingPos - 3);
         editor.markEndOfs   = scr2SmpPos(editor.ui.sampleMarkingPos - 3);
+
+        if (editor.markEndOfs > modEntry->samples[editor.currSample].length)
+            editor.markEndOfs = modEntry->samples[editor.currSample].length;
+
         invertRange();
 
         if (modEntry->samples[editor.currSample].length == 0)
@@ -2591,6 +2555,9 @@ void samplerSamplePressed(int8_t mouseButtonHeld)
             editor.markEndOfs   = scr2SmpPos(editor.ui.sampleMarkingPos - 3);
         }
 
+        if (editor.markEndOfs > modEntry->samples[editor.currSample].length)
+            editor.markEndOfs = modEntry->samples[editor.currSample].length;
+
         invertRange();
     }
 
@@ -2614,7 +2581,7 @@ void samplerLoopToggle(void)
     if (s->length == 0)
         return;
 
-    mixerKillVoiceIfReadingSample(editor.currSample);
+    turnOffVoices();
 
     if (editor.sampler.loopOnOffFlag)
     {
@@ -2652,7 +2619,7 @@ void samplerLoopToggle(void)
     editor.ui.updateCurrSampleReplen = true;
 
     displaySample();
-    updateVoiceParams();
+    mixerUpdateLoops();
     updateWindowTitle(MOD_IS_MODIFIED);
 }
 

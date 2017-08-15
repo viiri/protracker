@@ -82,6 +82,7 @@
       <Filter>gfx</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\pt_unicode.c" />
+    <ClCompile Include="..\..\src\pt_scopes.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\src\pt_audio.h">
@@ -142,6 +143,9 @@
       <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\pt_unicode.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\pt_scopes.h">
       <Filter>headers</Filter>
     </ClInclude>
   </ItemGroup>

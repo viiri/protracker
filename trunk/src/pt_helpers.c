@@ -55,32 +55,6 @@ void showErrorMsgBox(const char *fmt, ...)
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Critical Error", strBuf, window);
 }
 
-void periodToScopeDelta(moduleChannel_t *ch, uint16_t period)
-{
-    double rate;
-
-    if (period == 0)
-    {
-        ch->scopeReadDelta_f = 0.0;
-        ch->scopeDrawDelta_f = 1.0;
-    }
-    else
-    {
-        if (period < 113)
-            period = 113;
-
-        rate = (double)(PAULA_PAL_CLK) / period;
-
-        ch->scopeReadDelta_f = rate / (VBLANK_HZ     / 1.001); // "/ 1.001" to get real vblank hz (google it, verified to fix sync)
-        ch->scopeDrawDelta_f = rate / (PAULA_PAL_CLK / 428.0); // ProTracker middle-C Hz (period 428)
-    }
-}
-
-int8_t volumeToScopeVolume(uint8_t vol)
-{
-    return (0 - vol);
-}
-
 #ifndef _WIN32
 int8_t changePathToHome(void)
 {

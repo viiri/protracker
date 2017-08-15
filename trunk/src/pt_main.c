@@ -24,6 +24,8 @@
 #include "pt_sampleloader.h"
 #include "pt_terminal.h"
 #include "pt_unicode.h"
+#include "pt_scopes.h"
+#include "pt_audio.h"
 
 extern int8_t forceMixerOff; // pt_audio.c
 extern uint32_t palette[PALETTE_NUM]; // pt_palette.c
@@ -186,9 +188,9 @@ int main(int argc, char *argv[])
     setupSprites();
     diskOpSetInitPath();
 
-    editor.programRunning = true; /* set this before initScopes() */
+    editor.programRunning = true; // set this before initScopes()
 
-    /* in Windows, we use the STABLE (!) vsync for the scopes */
+    // in Windows, we use the STABLE (!) vsync for the scopes
 #ifndef _WIN32
     if (!initScopes())
     {
@@ -212,9 +214,7 @@ int main(int argc, char *argv[])
     modSetSpeed(editor.initialSpeed);
 
     updateWindowTitle(MOD_NOT_MODIFIED);
-
     pointerSetMode(POINTER_MODE_IDLE, DO_CARRY);
-
     setStatusMessage(editor.allRightText, DO_CARRY);
     setStatusMessage("PROTRACKER V2.3D", NO_CARRY);
 
@@ -250,9 +250,7 @@ int main(int argc, char *argv[])
     if ((argc == 3) && (!strcmp(argv[2], "/autoplay")))
     {
         editor.playMode = PLAY_MODE_NORMAL;
-
         modPlay(DONT_SET_PATTERN, 0, DONT_SET_ROW);
-
         editor.currMode = MODE_PLAY;
         pointerSetMode(POINTER_MODE_PLAY, DO_CARRY);
         setStatusMessage(editor.allRightText, DO_CARRY);
@@ -283,14 +281,14 @@ int main(int argc, char *argv[])
             handleSamplerFiltersBoxRepeats();
         }
 
+#ifdef _WIN32
+        updateScopes();
+#endif
         renderFrame();
         renderSprites();
         flipFrame();
 
         sinkVisualizerBars();
-#ifdef _WIN32
-        updateQuadrascope();
-#endif
     }
 
     cleanUp();
@@ -397,6 +395,8 @@ static void handleInput(void)
 
 static int8_t initializeVars(void)
 {
+    clearPaulaAndScopes();
+
     // clear common structs
     memset(&input,    0, sizeof (input));
     memset(&editor,   0, sizeof (editor));
@@ -887,7 +887,7 @@ static void readMouseXY(void)
         my = (int32_t)(my_f + 0.5);
     }
 
-    /* clamp to edges */
+    // clamp to edges
     mx = CLAMP(mx, 0, SCREEN_W - 1);
     my = CLAMP(my, 0, SCREEN_H - 1);
 

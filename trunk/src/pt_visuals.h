@@ -2,6 +2,7 @@
 #define __PT_VISUALS_H
 
 #include <stdint.h>
+#include "pt_header.h"
 
 void freeBMPs(void);
 void handleAskNo(void);
@@ -9,9 +10,8 @@ void handleAskYes(void);
 int8_t setupVideo(void);
 void renderFrame(void);
 void flipFrame(void);
-void updateSpectrumAnalyzer(int16_t period, int8_t volume);
+void updateSpectrumAnalyzer(uint8_t ch, int8_t vol, int16_t period);
 void sinkVisualizerBars(void);
-void updateQuadrascope(void);
 void updatePosEd(void);
 void updateVisualizer(void);
 void updateEditOp(void);
