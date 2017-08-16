@@ -776,11 +776,7 @@ static void playVoice(moduleChannel_t *ch)
         ch->n_samplenum = note.sample - 1;
         s = &modEntry->samples[ch->n_samplenum];
 
-        if (ch->n_length == 0)
-            ch->n_start = &modEntry->sampleData[RESERVED_SAMPLE_OFFSET]; // dummy sample
-        else
-            ch->n_start = &modEntry->sampleData[s->offset];
-
+        ch->n_start = &modEntry->sampleData[s->offset];
         ch->n_finetune = s->fineTune;
         ch->n_volume   = s->volume;
         ch->n_length   = s->length;
@@ -797,6 +793,9 @@ static void playVoice(moduleChannel_t *ch)
             ch->n_loopstart = ch->n_start;
             ch->n_wavestart = ch->n_start;
         }
+
+        if (ch->n_length == 0)
+            ch->n_loopstart = ch->n_wavestart = &modEntry->sampleData[RESERVED_SAMPLE_OFFSET]; // dummy sample
     }
 
     if (ch->n_note & 0x0FFF)
