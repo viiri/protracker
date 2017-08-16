@@ -70,63 +70,6 @@ void storeTempVariables(void); // defined in pt_modplayer.c
 
 void calcMod2WavTotalRows(void);
 
-void clearPaulaAndScopes(void)
-{
-    uint8_t i;
-    paulaVoice_t *v;
-    scopeChannel_t *sc;
-
-    SDL_LockAudio();
-
-    for (i = 0; i < AMIGA_VOICES; ++i)
-    {
-        v  = &paula[i];
-        sc = &scope[i];
-
-        v->active       = false;
-        sc->active      = false;
-        sc->retriggered = false;
-
-        v->phase    = 0;
-        v->volume_f = 0.0f;
-        v->delta_f  = v->lastDelta_f = 0.0f;
-        v->frac_f   = v->lastFrac_f  = 0.0f;
-        v->length   = v->newLength   = 2;
-        v->data     = v->newData     = NULL;
-        // panL/panR are set up later
-
-        sc->phase    = 0;
-        sc->phase_f  = 0.0f;
-        sc->volume   = 0;
-        sc->delta_f  = 0.0f;
-        sc->length   = sc->newLength   = 2; // setting these to 2 is IMPORTANT!
-        sc->loopFlag = sc->newLoopFlag = false;
-        sc->data     = sc->newData     = NULL;
-    }
-
-    SDL_UnlockAudio();
-}
-
-void mixerUpdateLoops(void) // updates Paula loop (+ scopes)
-{
-    uint8_t i;
-    moduleChannel_t *ch;
-    moduleSample_t *s;
-
-    for (i = 0; i < AMIGA_VOICES; ++i)
-    {
-        ch = &modEntry->channels[i];
-
-        if (ch->n_samplenum == editor.currSample)
-        {
-            s = &modEntry->samples[editor.currSample];
-
-            paulaSetData(i, ch->n_start + s->loopStart);
-            paulaSetLength(i, s->loopLength);
-        }
-    }
-}
-
 void setLEDFilter(uint8_t state)
 {
     editor.useLEDFilter = state;
@@ -235,6 +178,63 @@ static float cosApx(float x)
     return (x * 1.09742972f + x * x * 0.31678383f);
 }
 
+void clearPaulaAndScopes(void)
+{
+    uint8_t i;
+    paulaVoice_t *v;
+    scopeChannel_t *sc;
+
+    SDL_LockAudio();
+
+    for (i = 0; i < AMIGA_VOICES; ++i)
+    {
+        v  = &paula[i];
+        sc = &scope[i];
+
+        v->active       = false;
+        sc->active      = false;
+        sc->retriggered = false;
+
+        v->phase    = 0;
+        v->volume_f = 0.0f;
+        v->delta_f  = v->lastDelta_f = 0.0f;
+        v->frac_f   = v->lastFrac_f  = 0.0f;
+        v->length   = v->newLength   = 2;
+        v->data     = v->newData     = NULL;
+        // panL/panR are set up later
+
+        sc->phase    = 0;
+        sc->phase_f  = 0.0f;
+        sc->volume   = 0;
+        sc->delta_f  = 0.0f;
+        sc->length   = sc->newLength   = 2; // setting these to 2 is IMPORTANT!
+        sc->loopFlag = sc->newLoopFlag = false;
+        sc->data     = sc->newData     = NULL;
+    }
+
+    SDL_UnlockAudio();
+}
+
+void mixerUpdateLoops(void) // updates Paula loop (+ scopes)
+{
+    uint8_t i;
+    moduleChannel_t *ch;
+    moduleSample_t *s;
+
+    for (i = 0; i < AMIGA_VOICES; ++i)
+    {
+        ch = &modEntry->channels[i];
+
+        if (ch->n_samplenum == editor.currSample)
+        {
+            s = &modEntry->samples[editor.currSample];
+
+            paulaSetData(i, ch->n_start + s->loopStart);
+            paulaSetLength(i, s->loopLength);
+        }
+    }
+}
+
 static void mixerSetVoicePan(uint8_t ch, uint16_t pan) // pan = 0..256
 {
     float p;
@@ -259,8 +259,8 @@ void mixerKillVoice(uint8_t ch)
 
     v->active   = false;
     v->volume_f = 0.0f;
-    sc->active = false;
-    sc->volume = 0;
+    sc->active  = false;
+    sc->volume  = 0;
 
     memset(&blep[ch],    0, sizeof (blep_t));
     memset(&blepVol[ch], 0, sizeof (blep_t));
@@ -368,6 +368,9 @@ void paulaSetData(uint8_t ch, const int8_t *src)
         smp = 30;
 
     s = &modEntry->samples[smp];
+
+    if (src == NULL) // quirk for "the ultimate beeper.mod" (wow, did I really do this?!)
+        src = &modEntry->sampleData[0];
 
     paula[ch].newData     = src;
     scope[ch].newData     = src;
