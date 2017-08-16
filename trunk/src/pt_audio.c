@@ -369,8 +369,8 @@ void paulaSetData(uint8_t ch, const int8_t *src)
 
     s = &modEntry->samples[smp];
 
-    if (src == NULL) // quirk for "the ultimate beeper.mod" (wow, did I really do this?!)
-        src = &modEntry->sampleData[0];
+    if (src == NULL)
+        src = &modEntry->sampleData[RESERVED_SAMPLE_OFFSET]; // dummy sample
 
     paula[ch].newData     = src;
     scope[ch].newData     = src;
