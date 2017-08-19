@@ -22,6 +22,7 @@
     <ClCompile Include="..\..\src\pt_scopes.c" />
     <ClCompile Include="..\..\src\pt_tables.c" />
     <ClCompile Include="..\..\src\pt_textout.c" />
+    <ClCompile Include="..\..\src\pt_unicode.c" />
     <ClCompile Include="..\..\src\gfx\pt_gfx_aboutscreen.c">
       <Filter>gfx</Filter>
     </ClCompile>
@@ -139,6 +140,9 @@
       <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\pt_textout.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\pt_unicode.h">
       <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\pt_visuals.h">

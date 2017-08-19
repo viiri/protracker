@@ -166,6 +166,7 @@
     <ClInclude Include="..\..\src\pt_tables.h" />
     <ClInclude Include="..\..\src\pt_terminal.h" />
     <ClInclude Include="..\..\src\pt_textout.h" />
+    <ClInclude Include="..\..\src\pt_unicode.h" />
     <ClInclude Include="..\..\src\pt_visuals.h" />
     <ClCompile Include="..\..\src\pt_audio.c" />
     <ClCompile Include="..\..\src\pt_blep.c" />
@@ -186,6 +187,7 @@
     <ClCompile Include="..\..\src\pt_scopes.c" />
     <ClCompile Include="..\..\src\pt_tables.c" />
     <ClCompile Include="..\..\src\pt_textout.c" />
+    <ClCompile Include="..\..\src\pt_unicode.c" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System" />
