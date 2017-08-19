@@ -861,7 +861,23 @@ static void nextPosition(void)
             if (editor.compoMode) // stop song for music competitions playing
             {
                 doStopIt();
-                modSetPos(0, 0);
+                turnOffVoices();
+
+                modEntry->currOrder   = 0;
+                modEntry->currRow     = modEntry->row = 0;
+                modEntry->currPattern = modPattern = modEntry->head.order[0];
+
+                editor.currPatternDisp   = &modEntry->currPattern;
+                editor.currPosEdPattDisp = &modEntry->currPattern;
+                editor.currPatternDisp   = &modEntry->currPattern;
+                editor.currPosEdPattDisp = &modEntry->currPattern;
+
+                if (editor.ui.posEdScreenShown)
+                    editor.ui.updatePosEd = true;
+
+                editor.ui.updateSongPos      = true;
+                editor.ui.updateSongPattern  = true;
+                editor.ui.updateCurrPattText = true;
             }
         }
 
