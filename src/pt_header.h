@@ -333,7 +333,7 @@ struct editor_t
     int8_t keypadToggle8CFlag, normalizeFiltersFlag, sampleAllFlag, trackPattFlag, halfClipFlag;
     int8_t newOldFlag, pat2SmpHQ, note1, note2, note3, note4, oldNote1, oldNote2, oldNote3, oldNote4;
     int8_t mixFlag, modLoaded, fullScreenFlag, autoInsFlag, autoInsSlot, repeatKeyFlag, sampleZero;
-    int8_t accidental, transDelFlag, chordLengthMin;
+    int8_t accidental, transDelFlag, chordLengthMin, compoMode;
     uint8_t muted[AMIGA_VOICES], *rowVisitTable, playMode, songPlaying, currMode, useLEDFilter;
     uint8_t tuningFlag, pNoteFlag, tuningVol, errorMsgCounter, stepPlayEnabled, stepPlayBackwards;
     uint8_t blockBufferFlag, buffFromPos, buffToPos, blockFromPos, blockToPos, blockMarkFlag, didQuantize;

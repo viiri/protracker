@@ -109,8 +109,7 @@ static void updateFunk(moduleChannel_t *ch)
                 if (++ch->n_wavestart >= (ch->n_loopstart + ch->n_replen))
                       ch->n_wavestart  =  ch->n_loopstart;
 
-                if (ch->n_wavestart != NULL) // SAFETY BUG FIX
-                    *ch->n_wavestart = -1 - *ch->n_wavestart;
+                *ch->n_wavestart = -1 - *ch->n_wavestart;
             }
         }
     }
@@ -858,6 +857,12 @@ static void nextPosition(void)
         {
             modOrder = 0;
             modHasBeenPlayed = true;
+
+            if (editor.compoMode) // stop song for music competitions playing
+            {
+                doStopIt();
+                modSetPos(0, 0);
+            }
         }
 
         modPattern = modEntry->head.order[modOrder];

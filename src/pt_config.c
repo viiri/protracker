@@ -62,6 +62,7 @@ int8_t loadConfig(void)
     ptConfig.quantizeValue     = 1;
     ptConfig.transDel          = false;
     ptConfig.blankZeroFlag     = false;
+    ptConfig.compoMode         = false;
 
     memset(ptConfig.defaultDiskOpDir, 0, PATH_MAX_LEN + 1);
 
@@ -121,6 +122,13 @@ int8_t loadConfig(void)
             {
                 configBuffer = strtok(NULL, "\n");
                 continue;
+            }
+
+            // COMPOMODE
+            else if (strncmp(configBuffer, "COMPOMODE=", 10) == 0)
+            {
+                     if (strncmp(&configBuffer[10], "TRUE",  4) == 0) ptConfig.compoMode = true;
+                else if (strncmp(&configBuffer[10], "FALSE", 5) == 0) ptConfig.compoMode = false;
             }
 
             // PATTDOTS
@@ -263,6 +271,7 @@ int8_t loadConfig(void)
     editor.accidental          = ptConfig.accidental;
     editor.quantizeValue       = ptConfig.quantizeValue;
     editor.transDelFlag        = ptConfig.transDel;
+    editor.compoMode           = ptConfig.compoMode;
     editor.oldTempo            = editor.initialTempo;
 
     // Load PT.Config (if available)
