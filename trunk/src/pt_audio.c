@@ -661,7 +661,7 @@ void outputAudio(int16_t *target, int32_t numSamples)
             processMixedSample(j, out_f, false);
 
             smpL = (int16_t)(out_f[0]);
-            smpR = (int16_t)(out_f[0]);
+            smpR = (int16_t)(out_f[1]);
 
             *outStream++ = smpL;
             *outStream++ = smpR;
