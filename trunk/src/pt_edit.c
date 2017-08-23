@@ -485,7 +485,7 @@ void exitGetTextLine(uint8_t updateValue)
                     if (tmp32 > MAX_SAMPLE_LEN)
                         tmp32 = MAX_SAMPLE_LEN;
 
-                    if ((s->loopLength + s->loopStart) > 0)
+                    if ((s->loopStart + s->loopLength) > 2)
                     {
                         if (tmp32 < (s->loopStart + s->loopLength))
                             tmp32 =  s->loopStart + s->loopLength;
@@ -499,8 +499,6 @@ void exitGetTextLine(uint8_t updateValue)
                         editor.ui.updateCurrSampleLength = true;
                         editor.ui.updateSongSize = true;
                         updateSamplePos();
-
-                        testTempLoopPoints(s->length);
 
                         if (editor.ui.samplerScreenShown)
                             redrawSample();

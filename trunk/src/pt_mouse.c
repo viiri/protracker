@@ -1371,7 +1371,6 @@ void sampleLengthUpButton(int8_t fast)
     if (val > MAX_SAMPLE_LEN)
         val = MAX_SAMPLE_LEN;
 
-    testTempLoopPoints(val);
     modEntry->samples[editor.currSample].length = val;
     editor.ui.updateCurrSampleLength = true;
 }
@@ -1382,7 +1381,7 @@ void sampleLengthDownButton(int8_t fast)
     moduleSample_t *s;
 
     s = &modEntry->samples[editor.currSample];
-    if ((s->loopLength + s->loopStart) > 0)
+    if ((s->loopStart + s->loopLength) > 2)
     {
         if (s->length == (s->loopStart + s->loopLength))
             return;
@@ -1415,13 +1414,12 @@ void sampleLengthDownButton(int8_t fast)
         val = 0;
 
     s->length = val;
-    if ((s->loopStart + s->loopLength) > 0)
+    if ((s->loopStart + s->loopLength) > 2)
     {
         if (s->length < (s->loopStart + s->loopLength))
             s->length =  s->loopStart + s->loopLength;
     }
 
-    testTempLoopPoints(s->length);
     editor.ui.updateCurrSampleLength = true;
 }
 
@@ -4647,7 +4645,7 @@ int8_t handleLeftMouseButton(void)
 
                         s->length = 0;
 
-                        if ((s->loopStart + s->loopLength) > 0)
+                        if ((s->loopStart + s->loopLength) > 2)
                         {
                             if (s->length < (s->loopStart + s->loopLength))
                                 s->length =  s->loopStart + s->loopLength;
