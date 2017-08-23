@@ -996,12 +996,14 @@ void updateCurrSample(void)
         editor.ui.updateCurrSampleReplen   = true;
     }
 
-    removeTempLoopPoints();
     if (editor.ui.samplerScreenShown)
         redrawSample();
 
     updateSamplePos();
     recalcChordLength();
+
+    editor.sampler.tmpLoopStart  = 0;
+    editor.sampler.tmpLoopLength = 0;
 }
 
 void updatePatternData(void)

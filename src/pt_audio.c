@@ -579,7 +579,7 @@ void pat2SmpMixChannels(int32_t numSamples) // pat2smp needs a multi-step mixer 
     }
 }
 
-static inline void processMixedSample(int32_t i, float *out_f, uint8_t mono)
+static inline void processMixedSamples(int32_t i, float *out_f, uint8_t mono)
 {
     out_f[0] = mixBufferL_f[i];
     out_f[1] = mixBufferR_f[i];
@@ -617,7 +617,7 @@ void outputAudio(int16_t *target, int32_t numSamples)
         mixChannels(numSamples);
         for (j = 0; j < numSamples; ++j)
         {
-            processMixedSample(j, out_f, false);
+            processMixedSamples(j, out_f, false);
 
             smpL = (int16_t)(out_f[0]);
             smpR = (int16_t)(out_f[1]);
@@ -638,7 +638,7 @@ void outputAudio(int16_t *target, int32_t numSamples)
         pat2SmpMixChannels(numSamples);
         for (j = 0; j < numSamples; ++j)
         {
-            processMixedSample(j, out_f, true); // mono
+            processMixedSamples(j, out_f, true); // mono
             smpL = (int16_t)(out_f[0]);
 
             if (editor.pat2SmpPos >= MAX_SAMPLE_LEN)
@@ -658,7 +658,7 @@ void outputAudio(int16_t *target, int32_t numSamples)
         mixChannels(numSamples);
         for (j = 0; j < numSamples; ++j)
         {
-            processMixedSample(j, out_f, false);
+            processMixedSamples(j, out_f, false);
 
             smpL = (int16_t)(out_f[0]);
             smpR = (int16_t)(out_f[1]);

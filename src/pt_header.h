@@ -439,7 +439,7 @@ struct editor_t
     struct sampler_t
     {
         const int8_t *samStart;
-        int8_t *blankSample, *copyBuf, loopOnOffFlag;
+        int8_t *blankSample, *copyBuf;
         int16_t loopStartPos, loopEndPos;
         uint16_t dragStart, dragEnd, saveMouseX, lastSamPos;
         int32_t samPointWidth, samOffset, samDisplay, samLength;

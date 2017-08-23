@@ -35,8 +35,6 @@ void samplerShowRange(void);
 void samplerShowAll(void);
 void redoSampleData(int8_t sample);
 void fillSampleRedoBuffer(int8_t sample);
-void removeTempLoopPoints(void);
-void testTempLoopPoints(int32_t newSampleLen);
 void updateSamplePos(void);
 void fillSampleFilterUndoBuffer(void);
 void exitFromSam(void);

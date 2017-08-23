@@ -460,18 +460,6 @@ void redrawSample(void)
     }
 }
 
-void removeTempLoopPoints(void)
-{
-    editor.sampler.tmpLoopStart  = 0;
-    editor.sampler.tmpLoopLength = 2;
-}
-
-void testTempLoopPoints(int32_t newSampleLen)
-{
-    if ((editor.sampler.tmpLoopStart + editor.sampler.tmpLoopLength) > newSampleLen)
-        removeTempLoopPoints();
-}
-
 void highPassSample(int32_t cutOff)
 {
     int32_t i, from, to;
@@ -698,8 +686,6 @@ void redoSampleData(int8_t sample)
 
     displayMsg("SAMPLE RESTORED !");
     terminalPrintf("Sample %02x was restored\n", sample + 1);
-
-    removeTempLoopPoints();
 
     editor.samplePos = 0;
     updateCurrSample();
@@ -1580,8 +1566,6 @@ void samplerSamDelete(uint8_t cut)
         s->volume     = 0;
         s->fineTune   = 0;
 
-        removeTempLoopPoints();
-
         editor.samplePos = 0;
         updateCurrSample();
 
@@ -1700,7 +1684,6 @@ void samplerSamDelete(uint8_t cut)
 
     editor.samplePos = editor.markStartOfs;
     updateSamplePos();
-    removeTempLoopPoints();
     recalcChordLength();
     displaySample();
 
@@ -1830,7 +1813,6 @@ void samplerSamPaste(void)
 
     editor.samplePos = editor.markEndOfs;
     updateSamplePos();
-    removeTempLoopPoints();
     recalcChordLength();
 
     if (wasZooming)
@@ -2036,8 +2018,6 @@ void setLoopSprites(void)
     s = &modEntry->samples[editor.currSample];
     if ((s->loopStart + s->loopLength) > 2)
     {
-        editor.sampler.loopOnOffFlag = 1;
-
         if (editor.sampler.samDisplay > 0)
         {
             editor.sampler.loopStartPos = smpPos2Scr(s->loopStart);
@@ -2055,7 +2035,6 @@ void setLoopSprites(void)
     }
     else
     {
-        editor.sampler.loopOnOffFlag = 0;
         editor.sampler.loopStartPos  = 0;
         editor.sampler.loopEndPos    = 0;
 
@@ -2063,7 +2042,7 @@ void setLoopSprites(void)
         hideSprite(SPRITE_LOOP_PIN_RIGHT);
     }
 
-    textOutBg(pixelBuffer, 288, 225, editor.sampler.loopOnOffFlag ? "ON " : "OFF", palette[PAL_GENTXT], palette[PAL_GENBKG]);
+    textOutBg(pixelBuffer, 288, 225, ((s->loopStart + s->loopLength) > 2) ? "ON " : "OFF", palette[PAL_GENTXT], palette[PAL_GENBKG]);
 }
 
 void samplerShowAll(void)
@@ -2446,14 +2425,13 @@ void samplerSamplePressed(int8_t mouseButtonHeld)
     }
 
     mouseX = (int16_t)(input.mouse.x);
+    s = &modEntry->samples[editor.currSample];
 
     if (editor.ui.leftLoopPinMoving)
     {
         if (editor.sampler.lastMouseX != mouseX)
         {
             editor.sampler.lastMouseX = mouseX;
-
-            s = &modEntry->samples[editor.currSample];
 
             mouseX += 2;
 
@@ -2518,16 +2496,25 @@ void samplerSamplePressed(int8_t mouseButtonHeld)
         editor.sampler.lastSamPos  = editor.ui.sampleMarkingPos;
 
         invertRange();
-        editor.markStartOfs = scr2SmpPos(editor.ui.sampleMarkingPos - 3);
-        editor.markEndOfs   = scr2SmpPos(editor.ui.sampleMarkingPos - 3);
+        if (s->length == 0)
+        {
+            editor.markStartOfs = 0;
+            editor.markEndOfs   = 0;
+        }
+        else
+        {
+            
+            editor.markStartOfs = scr2SmpPos(editor.ui.sampleMarkingPos - 3);
+            editor.markEndOfs   = scr2SmpPos(editor.ui.sampleMarkingPos - 3);
 
-        if (editor.markEndOfs > modEntry->samples[editor.currSample].length)
-            editor.markEndOfs = modEntry->samples[editor.currSample].length;
-
+            if (editor.markEndOfs > s->length)
+                editor.markEndOfs = s->length;
+        }
         invertRange();
 
-        if (modEntry->samples[editor.currSample].length == 0)
-            editor.samplePos = 0;
+        if (s->length == 0)
+            editor.markStartOfs = 0;
+
         else
             editor.samplePos = scr2SmpPos(mouseX - 3);
 
@@ -2543,25 +2530,31 @@ void samplerSamplePressed(int8_t mouseButtonHeld)
         editor.sampler.lastSamPos = (uint16_t)(mouseX);
 
         invertRange();
-
-        if (editor.sampler.lastSamPos > editor.ui.sampleMarkingPos)
+        if (s->length == 0)
         {
-            editor.markStartOfs = scr2SmpPos(editor.ui.sampleMarkingPos - 3);
-            editor.markEndOfs   = scr2SmpPos(editor.sampler.lastSamPos  - 3);
+            editor.markStartOfs = 0;
+            editor.markEndOfs   = 0;
         }
         else
         {
-            editor.markStartOfs = scr2SmpPos(editor.sampler.lastSamPos  - 3);
-            editor.markEndOfs   = scr2SmpPos(editor.ui.sampleMarkingPos - 3);
+            if (editor.sampler.lastSamPos > editor.ui.sampleMarkingPos)
+            {
+                editor.markStartOfs = scr2SmpPos(editor.ui.sampleMarkingPos - 3);
+                editor.markEndOfs   = scr2SmpPos(editor.sampler.lastSamPos  - 3);
+            }
+            else
+            {
+                editor.markStartOfs = scr2SmpPos(editor.sampler.lastSamPos  - 3);
+                editor.markEndOfs   = scr2SmpPos(editor.ui.sampleMarkingPos - 3);
+            }
+
+            if (editor.markEndOfs > s->length)
+                editor.markEndOfs = s->length;
         }
-
-        if (editor.markEndOfs > modEntry->samples[editor.currSample].length)
-            editor.markEndOfs = modEntry->samples[editor.currSample].length;
-
         invertRange();
     }
 
-    if (modEntry->samples[editor.currSample].length == 0)
+    if (s->length == 0)
         editor.samplePos = 0;
     else
         editor.samplePos = scr2SmpPos(mouseX - 3);
@@ -2578,40 +2571,40 @@ void samplerLoopToggle(void)
         return;
 
     s = &modEntry->samples[editor.currSample];
-    if (s->length == 0)
+    if (s->length < 2)
         return;
 
     turnOffVoices();
 
-    if (editor.sampler.loopOnOffFlag)
+    if ((s->loopStart + s->loopLength) > 2)
     {
+        // disable loop
+
         editor.sampler.tmpLoopStart  = s->loopStart;
         editor.sampler.tmpLoopLength = s->loopLength;
+
         s->loopStart  = 0;
         s->loopLength = 2;
     }
     else
     {
-        s->loopStart  = editor.sampler.tmpLoopStart;
-        s->loopLength = editor.sampler.tmpLoopLength;
+        // enable loop
 
-        if (s->loopLength <= 2)
-        {
-            s->loopLength = s->length;
-            if (s->loopLength < 2)
-                s->loopLength = 2;
-        }
-
-        if (s->loopStart >= s->length)
-            s->loopStart  = s->length - 1;
-
-        while ((s->loopStart + s->loopLength) > s->length)
-            s->loopLength--;
-
-        if ((s->loopLength <= 2) || (s->loopLength > s->length))
+        if ((editor.sampler.tmpLoopStart == 0) && (editor.sampler.tmpLoopLength == 0))
         {
             s->loopStart  = 0;
             s->loopLength = s->length;
+        }
+        else
+        {
+            s->loopStart  = editor.sampler.tmpLoopStart;
+            s->loopLength = editor.sampler.tmpLoopLength;
+
+            if ((s->loopStart + s->loopLength) > s->length)
+            {
+                s->loopStart  = 0;
+                s->loopLength = s->length;
+            }
         }
     }
 
