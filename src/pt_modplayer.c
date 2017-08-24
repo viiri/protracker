@@ -672,11 +672,14 @@ static void checkMoreEffects(moduleChannel_t *ch)
 
 static void checkEffects(moduleChannel_t *ch)
 {
+    uint8_t effect;
+
     updateFunk(ch);
 
+    effect = (ch->n_cmd & 0x0F00) >> 8;
     if (ch->n_cmd & 0x0FFF)
     {
-        switch ((ch->n_cmd & 0x0F00) >> 8)
+        switch (effect)
         {
             case 0x00: arpeggio(ch);            break;
             case 0x01: portaUp(ch);             break;
@@ -699,7 +702,8 @@ static void checkEffects(moduleChannel_t *ch)
         }
     }
 
-    paulaSetVolume(ch->n_chanindex, ch->n_volume);
+    if (effect != 0x07)
+        paulaSetVolume(ch->n_chanindex, ch->n_volume);
 }
 
 static void setPeriod(moduleChannel_t *ch)
