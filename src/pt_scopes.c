@@ -13,6 +13,9 @@
 const int16_t mixScaleTable[AMIGA_VOICES] = { 388, 570, 595, 585 };
 
 scopeChannel_t scope[4];
+static SDL_Thread *scopeThread;
+static uint64_t next60HzTime_64bit;
+
 extern int8_t forceMixerOff;  // pt_audio.c
 extern uint32_t *pixelBuffer; // pt_main.c
 
@@ -209,4 +212,47 @@ void drawScopes(void)
             scopePtr[(scopeTemp * SCREEN_W) + x] = scopePixel;
         }
     }
+}
+
+int32_t scopeThreadFunc(void *ptr)
+{
+    uint64_t timeNow_64bit;
+    double delayMs_f, perfFreq_f, frameLength_f;
+
+    (void)(ptr);
+
+    while (editor.programRunning)
+    {
+        perfFreq_f = (double)(SDL_GetPerformanceFrequency()); // should be safe for double 
+        if (perfFreq_f == 0.0)
+            continue; // panic!
+
+        timeNow_64bit = SDL_GetPerformanceCounter();
+        if (next60HzTime_64bit > timeNow_64bit)
+        {
+            delayMs_f = (double)(next60HzTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f); // should be safe for double
+            SDL_Delay((uint32_t)(delayMs_f + 0.5));
+        }
+
+        frameLength_f = perfFreq_f / VBLANK_HZ;
+        next60HzTime_64bit += (uint32_t)(frameLength_f + 0.5);
+
+        updateScopes();
+    }
+
+    return (true);
+}
+
+uint8_t initScopes(void)
+{
+    double frameLength_f;
+
+    frameLength_f = (double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ;
+    next60HzTime_64bit = SDL_GetPerformanceCounter() + (uint32_t)(frameLength_f + 0.5);
+
+    scopeThread = SDL_CreateThread(scopeThreadFunc, "PT Clone Scope Thread", NULL);
+    if (scopeThread == NULL)
+        return (false);
+
+    return (true);
 }
