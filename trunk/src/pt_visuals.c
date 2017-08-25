@@ -35,7 +35,6 @@ extern SDL_Texture *texture;     // pt_main.c
 extern uint8_t vsync60HzPresent; // pt_main.c
 extern uint8_t fullscreen;       // pt_main.c
 static uint64_t next60HzTime_64bit;
-static SDL_Thread *scopeThread;
 
 sprite_t sprites[SPRITE_NUM];
 
@@ -3038,49 +3037,6 @@ int8_t setupVideo(void)
         SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
 
     updateMouseScaling();
-
-    return (true);
-}
-
-static int32_t scopeThreadFunc(void *ptr)
-{
-    uint64_t timeNow_64bit;
-    double delayMs_f, perfFreq_f, frameLength_f;
-
-    (void)(ptr);
-
-    while (editor.programRunning)
-    {
-        perfFreq_f = (double)(SDL_GetPerformanceFrequency()); // should be safe for double 
-        if (perfFreq_f == 0.0)
-            continue; // panic!
-
-        timeNow_64bit = SDL_GetPerformanceCounter();
-        if (next60HzTime_64bit > timeNow_64bit)
-        {
-            delayMs_f = (double)(next60HzTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f); // should be safe for double
-            SDL_Delay((uint32_t)(delayMs_f + 0.5));
-        }
-
-        frameLength_f = perfFreq_f / VBLANK_HZ;
-        next60HzTime_64bit += (uint32_t)(frameLength_f + 0.5);
-
-        updateScopes();
-    }
-
-    return (true);
-}
-
-uint8_t initScopes(void)
-{
-    double frameLength_f;
-
-    frameLength_f = (double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ;
-    next60HzTime_64bit = SDL_GetPerformanceCounter() + (uint32_t)(frameLength_f + 0.5);
-
-    scopeThread = SDL_CreateThread(scopeThreadFunc, "PT Clone Scope Thread", NULL);
-    if (scopeThread == NULL)
-        return (false);
 
     return (true);
 }

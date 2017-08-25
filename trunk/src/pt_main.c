@@ -190,8 +190,6 @@ int main(int argc, char *argv[])
 
     editor.programRunning = true; // set this before initScopes()
 
-    // in Windows, we use the STABLE (!) vsync for the scopes
-#ifndef _WIN32
     if (!initScopes())
     {
         cleanUp();
@@ -199,7 +197,6 @@ int main(int argc, char *argv[])
 
         return (1);
     }
-#endif
 
     modEntry = createNewMod();
     if (modEntry == NULL)
@@ -281,9 +278,6 @@ int main(int argc, char *argv[])
             handleSamplerFiltersBoxRepeats();
         }
 
-#ifdef _WIN32
-        updateScopes();
-#endif
         renderFrame();
         renderSprites();
         flipFrame();

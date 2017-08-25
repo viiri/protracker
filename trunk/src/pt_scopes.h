@@ -16,5 +16,7 @@ extern scopeChannel_t scope[4];
 
 void updateScopes(void);
 void drawScopes(void);
+int32_t scopeThreadFunc(void *ptr);
+uint8_t initScopes(void);
 
 #endif
