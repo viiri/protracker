@@ -238,7 +238,7 @@ int32_t scopeThreadFunc(void *ptr)
             SDL_Delay((uint32_t)(delayMs_f + 0.5));
         }
 
-        frameLength_f = perfFreq_f / VBLANK_HZ;
+        frameLength_f = perfFreq_f / REAL_VBLANK_HZ;
         next60HzTime_64bit += (uint32_t)(frameLength_f + 0.5);
 
         updateScopes();
@@ -251,7 +251,7 @@ uint8_t initScopes(void)
 {
     double frameLength_f;
 
-    frameLength_f = (double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ;
+    frameLength_f = (double)(SDL_GetPerformanceFrequency()) / REAL_VBLANK_HZ;
     next60HzTime_64bit = SDL_GetPerformanceCounter() + (uint32_t)(frameLength_f + 0.5);
 
     scopeThread = SDL_CreateThread(scopeThreadFunc, "PT Clone Scope Thread", NULL);

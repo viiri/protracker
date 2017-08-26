@@ -258,7 +258,7 @@ int main(int argc, char *argv[])
     updateCursorPos();
 
     // setup timer stuff
-    next60HzTime_64bit = SDL_GetPerformanceCounter() + (uint64_t)(((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5);
+    next60HzTime_64bit = SDL_GetPerformanceCounter() + (uint64_t)(((double)(SDL_GetPerformanceFrequency()) / REAL_VBLANK_HZ) + 0.5);
 
     while (editor.programRunning)
     {
@@ -856,7 +856,7 @@ static void syncThreadTo60Hz(void)
         SDL_Delay((uint32_t)(delayMs_f + 0.5));
     }
 
-    frameLength_f = perfFreq_f / VBLANK_HZ;
+    frameLength_f = perfFreq_f / REAL_VBLANK_HZ;
     next60HzTime_64bit += (uint64_t)(frameLength_f + 0.5);
 }
 
