@@ -299,8 +299,6 @@ void paulaRestartDMA(uint8_t ch)
     v->length = length;
     v->active = true;
 
-    sc->phase_f     = 0.0f;
-    sc->phase       = 0;
     sc->data        = sc->newData;
     sc->length      = length;
     sc->active      = true;
