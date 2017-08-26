@@ -333,7 +333,7 @@ void paulaSetPeriod(uint8_t ch, uint16_t period)
     if (v->lastDelta_f == 0.0f)
         v->lastDelta_f = v->delta_f;
 
-    scope[ch].delta_f = hz_f / VBLANK_HZ;
+    scope[ch].delta_f = hz_f / REAL_VBLANK_HZ;
 }
 
 void paulaSetVolume(uint8_t ch, int8_t vol)
