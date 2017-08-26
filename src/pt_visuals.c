@@ -34,7 +34,6 @@ extern SDL_Renderer *renderer;   // pt_main.c
 extern SDL_Texture *texture;     // pt_main.c
 extern uint8_t vsync60HzPresent; // pt_main.c
 extern uint8_t fullscreen;       // pt_main.c
-static uint64_t next60HzTime_64bit;
 
 sprite_t sprites[SPRITE_NUM];
 
