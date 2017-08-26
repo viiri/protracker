@@ -38,6 +38,7 @@ void updateScopes(void)
         if (sc->retriggered)
         {
             sc->retriggered = false; // we just retriggered the scopes, don't increase sample phase on this cycle
+            sc->phase_f += sc->delta_f;
         }
         else if (sc->active)
         {
