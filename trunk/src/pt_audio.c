@@ -319,6 +319,7 @@ void paulaSetPeriod(uint8_t ch, uint16_t period)
     }
     else
     {
+        // confirmed behavior on real Amiga
         if (period < 113)
             period = 113;
 
@@ -330,27 +331,27 @@ void paulaSetPeriod(uint8_t ch, uint16_t period)
         v->delta_f = hz_f / audioFreq_f;
     }
 
+    scope[ch].delta_f = hz_f / REAL_VBLANK_HZ;
+
     if (v->lastDelta_f == 0.0f)
         v->lastDelta_f = v->delta_f;
-
-    scope[ch].delta_f = hz_f / REAL_VBLANK_HZ;
 }
 
-void paulaSetVolume(uint8_t ch, int8_t vol)
+void paulaSetVolume(uint8_t ch, uint16_t vol)
 {
-    if (vol & (1 << 6))
-        vol = 0x0040;
-    else
-        vol &= 0x003F;
+    vol &= 0x007F;
+    if (vol > 0x40)
+        vol = 0x40;
 
     paula[ch].volume_f = vol * (1.0f / 64.0f);
     scope[ch].volume   = 0 - vol;
 }
 
+// our Paula emulator takes sample lengths in bytes instead of words
 void paulaSetLength(uint8_t ch, uint32_t len)
 {
     if (len < 2)
-        len = 2;
+        len = 2; /* needed safety for mixer and scopes */
 
     scope[ch].newLength = paula[ch].newLength = len;
 }
@@ -793,7 +794,7 @@ int8_t setupAudio(void)
     want.channels = 2;
     want.callback = audioCallback;
     want.userdata = NULL;
-    want.samples  = 1024; // should be 2^n for compatibility with all sound cards
+    want.samples  = ptConfig.soundBufferSize;
 
     dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
     if (dev == 0)
@@ -802,7 +803,7 @@ int8_t setupAudio(void)
         return (false);
     }
 
-    if (have.freq < 44100) // lower than this is not safe for one-step mixer w/ BLEP
+    if (have.freq < 32000) // lower than this is not safe for one-step mixer w/ BLEP
     {
         showErrorMsgBox("Unable to open audio: The audio output rate couldn't be used!");
         return (false);

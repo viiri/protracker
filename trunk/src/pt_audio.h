@@ -31,7 +31,7 @@ void toggleLowPassFilter(void);
 
 void paulaRestartDMA(uint8_t ch);
 void paulaSetPeriod(uint8_t ch, uint16_t period);
-void paulaSetVolume(uint8_t ch, int8_t vol);
+void paulaSetVolume(uint8_t ch, uint16_t vol);
 void paulaSetLength(uint8_t ch, uint32_t len);
 void paulaSetData(uint8_t ch, const int8_t *src);
 

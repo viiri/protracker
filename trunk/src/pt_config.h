@@ -10,7 +10,7 @@ struct ptConfig_t
     int8_t stereoSeparation, videoScaleFactor, blepSynthesis, transDel;
     int8_t modDot, accidental, blankZeroFlag, realVuMeters;
     int16_t quantizeValue;
-    uint32_t soundFrequency;
+    uint32_t soundFrequency, soundBufferSize;
 } ptConfig;
 
 int8_t loadConfig();
