@@ -63,6 +63,7 @@ int8_t loadConfig(void)
     ptConfig.transDel          = false;
     ptConfig.blankZeroFlag     = false;
     ptConfig.compoMode         = false;
+    ptConfig.soundBufferSize   = 1024;
 
     memset(ptConfig.defaultDiskOpDir, 0, PATH_MAX_LEN + 1);
 
@@ -205,6 +206,7 @@ int8_t loadConfig(void)
                 else if (strncmp(&configBuffer[11], "6X", 2) == 0) ptConfig.videoScaleFactor = 6;
                 else if (strncmp(&configBuffer[11], "7X", 2) == 0) ptConfig.videoScaleFactor = 7;
                 else if (strncmp(&configBuffer[11], "8X", 2) == 0) ptConfig.videoScaleFactor = 8;
+                else if (strncmp(&configBuffer[11], "9X", 2) == 0) ptConfig.videoScaleFactor = 9;
             }
 
             // BLEP
@@ -245,7 +247,14 @@ int8_t loadConfig(void)
             else if (strncmp(configBuffer, "FREQUENCY=", 10) == 0)
             {
                 if (configBuffer[10] != '\0')
-                    ptConfig.soundFrequency = (uint32_t)(CLAMP(atoi(&configBuffer[10]), 44100, 48000));
+                    ptConfig.soundFrequency = (uint32_t)(CLAMP(atoi(&configBuffer[10]), 32000, 96000));
+            }
+
+            // BUFFERSIZE
+            else if (strncmp(configBuffer, "BUFFERSIZE=", 11) == 0)
+            {
+                if (configBuffer[11] != '\0')
+                    ptConfig.soundBufferSize = (uint32_t)(CLAMP(atoi(&configBuffer[11]), 128, 8192));
             }
 
             // STEREOSEPARATION
