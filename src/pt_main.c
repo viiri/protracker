@@ -864,21 +864,21 @@ static void readMouseXY(void)
 {
     int16_t x, y;
     int32_t mx, my;
-    double mx_f, my_f;
+    float mx_f, my_f;
 
     SDL_PumpEvents();
     SDL_GetMouseState(&mx, &my);
 
-    if (input.mouse.scaleX_f != 1.0)
+    if (input.mouse.scaleX_f != 1.0f)
     {
         mx_f = mx * input.mouse.scaleX_f;
-        mx = (int32_t)(mx_f + 0.5);
+        mx = (int32_t)(mx_f + 0.5f);
     }
 
-    if (input.mouse.scaleY_f != 1.0)
+    if (input.mouse.scaleY_f != 1.0f)
     {
         my_f = my * input.mouse.scaleY_f;
-        my = (int32_t)(my_f + 0.5);
+        my = (int32_t)(my_f + 0.5f);
     }
 
     // clamp to edges
