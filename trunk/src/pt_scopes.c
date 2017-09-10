@@ -37,11 +37,11 @@ void updateScopes(void)
         sc = &scope[i];
         if (sc->retriggered)
         {
-            sc->retriggered = false; // we just retriggered the scopes, don't increase sample phase on this cycle
+            sc->retriggered = false;
 
-            sc->phase_f  = 0.0f;
-            sc->phase    = 0;
-            sc->phase_f += sc->delta_f;
+            // we just (re)triggered the scopes, reset integer phase and set new phase for next cycle
+            sc->phase   = 0;
+            sc->phase_f = sc->delta_f; // phase_f = 0.0f; phase_f += sc->delta_f;
         }
         else if (sc->active)
         {
@@ -50,14 +50,11 @@ void updateScopes(void)
             while (sc->phase_f >= sc->length)
             {
                 sc->phase_f -= sc->length;
+
                 sc->length   = sc->newLength;
                 sc->data     = sc->newData;
                 sc->loopFlag = sc->newLoopFlag; // used for scope display wrapping
             }
-
-            // just for safety, but is probably never going to trigger
-            if (sc->phase_f < 0.0f)
-                sc->phase_f = 0.0f;
 
             sc->phase    = (int32_t)(sc->phase_f); // truncate
             sc->phase_f += sc->delta_f;
@@ -84,10 +81,10 @@ void updateScopes(void)
 void drawScopes(void)
 {
     const int8_t *readPtr;
-    int8_t volume, loopFlag;
+    int8_t volume;
     uint8_t i, y, totalVoicesActive;
-    int16_t scopeData, x;
-    int32_t readPos, monoScopeBuffer[MONOSCOPE_WIDTH], scopeTemp, dataLen;
+    int16_t scopeData;
+    int32_t x, readPos, monoScopeBuffer[MONOSCOPE_WIDTH], scopeTemp, dataLen;
     const uint32_t *ptr32Src;
     uint32_t *ptr32Dst, *scopePtr, scopePixel;
     scopeChannel_t *sc;
@@ -126,25 +123,27 @@ void drawScopes(void)
             }
             else
             {
-                readPos  = sc->phase;
-                volume   = sc->volume;
-                loopFlag = sc->loopFlag;
+                readPos = sc->phase;
+                volume  = sc->volume;
 
-                for (x = 0; x < SCOPE_WIDTH; ++x)
+                if (sc->loopFlag)
                 {
-                    if (loopFlag || (readPos < dataLen))
-                        scopeData = readPtr[readPos % dataLen] * volume;
-                    else
+                    for (x = 0; x < SCOPE_WIDTH; ++x)
+                    {
+                        scopeData = (readPtr[readPos++ % dataLen] * volume) >> 9;
+                        scopePtr[(scopeData * SCREEN_W) + x] = scopePixel;
+                    }
+                }
+                else
+                {
+                    for (x = 0; x < SCOPE_WIDTH; ++x)
+                    {
                         scopeData = 0;
+                        if (readPos < dataLen)
+                            scopeData = (readPtr[readPos++] * volume) >> 9;
 
-                    // "arithmetic shift right" on signed number simulation
-                    if (scopeData < 0)
-                        scopeData = 0xFF80 | ((uint16_t)(scopeData) >> 9); // 0xFF80 = 2^16 - 2^(16-9)
-                    else
-                        scopeData /= (1 << 9);
-
-                    scopePtr[(scopeData * SCREEN_W) + x] = scopePixel;
-                    readPos++;
+                        scopePtr[(scopeData * SCREEN_W) + x] = scopePixel;
+                    }
                 }
             }
 
@@ -168,6 +167,7 @@ void drawScopes(void)
         }
 
         // mix channels
+
         memset(monoScopeBuffer, 0, sizeof (monoScopeBuffer));
 
         totalVoicesActive = 0;
@@ -180,19 +180,21 @@ void drawScopes(void)
 
             if (sc->active && !editor.muted[i] && (readPtr != NULL) && (dataLen > 0))
             {
-                readPos  = sc->phase;
-                volume   = sc->volume;
-                loopFlag = sc->loopFlag;
+                readPos = sc->phase;
+                volume  = sc->volume;
 
-                for (x = 0; x < MONOSCOPE_WIDTH; ++x)
+                if (sc->loopFlag)
                 {
-                    if (loopFlag || (readPos < dataLen))
-                        scopeData = readPtr[readPos % dataLen] * volume;
-                    else
-                        scopeData = 0;
+                    for (x = 0; x < MONOSCOPE_WIDTH; ++x)
+                        monoScopeBuffer[x] += (readPtr[readPos++ % dataLen] * volume);
+                }
+                else
+                {
+                    if (dataLen > MONOSCOPE_WIDTH)
+                        dataLen = MONOSCOPE_WIDTH;
 
-                    monoScopeBuffer[x] += scopeData;
-                    readPos++;
+                    for (x = 0; x < dataLen; ++x)
+                        monoScopeBuffer[x] += (readPtr[readPos++] * volume);
                 }
 
                 totalVoicesActive++;
@@ -203,11 +205,7 @@ void drawScopes(void)
         for (x = 0; x < MONOSCOPE_WIDTH; ++x)
         {
             scopeTemp = monoScopeBuffer[x];
-            if ((scopeTemp == 0) || (totalVoicesActive == 0))
-            {
-                 scopeTemp = 0;
-            }
-            else
+            if (totalVoicesActive > 0)
             {
                 scopeTemp /= mixScaleTable[totalVoicesActive - 1];
                 scopeTemp  = CLAMP(scopeTemp, -21, 22);
@@ -224,6 +222,8 @@ int32_t scopeThreadFunc(void *ptr)
     double delayMs_f, perfFreq_f, frameLength_f;
 
     (void)(ptr);
+
+    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
 
     while (editor.programRunning)
     {

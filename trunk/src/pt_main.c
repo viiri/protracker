@@ -118,13 +118,14 @@ int main(int argc, char *argv[])
     // for taking control over windows key and numlock on keyboard if app has focus
     windowsKeyIsDown = false;
     g_hKeyboardHook  = SetWindowsHookEx(WH_KEYBOARD_LL, lowLevelKeyboardProc, GetModuleHandle(NULL), 0);
-    SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
     SetUnhandledExceptionFilter(ExceptionHandler); // crash handler
 #endif
 
 #ifdef __APPLE__
     osxSetDirToProgramDirFromArgs(argv);
 #endif
+
+    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
 
     if (!initializeVars())
     {
