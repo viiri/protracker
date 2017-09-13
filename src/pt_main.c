@@ -238,20 +238,21 @@ int main(int argc, char *argv[])
     if (((argc >= 2) && (strlen(argv[1]) > 0)) && !((argc == 2) && (!strncmp(argv[1], "-psn_", 5))))
     {
         loadModFromArg(argv);
+
+        // play song
+        if (modEntry->moduleLoaded)
+        {
+            editor.playMode = PLAY_MODE_NORMAL;
+            modPlay(DONT_SET_PATTERN, 0, DONT_SET_ROW);
+            editor.currMode = MODE_PLAY;
+            pointerSetMode(POINTER_MODE_PLAY, DO_CARRY);
+            setStatusMessage(editor.allRightText, DO_CARRY);
+        }
     }
     else
     {
         if (!editor.configFound)
             displayErrorMsg("CONFIG NOT FOUND!");
-    }
-
-    if ((argc == 3) && (!strcmp(argv[2], "/autoplay")))
-    {
-        editor.playMode = PLAY_MODE_NORMAL;
-        modPlay(DONT_SET_PATTERN, 0, DONT_SET_ROW);
-        editor.currMode = MODE_PLAY;
-        pointerSetMode(POINTER_MODE_PLAY, DO_CARRY);
-        setStatusMessage(editor.allRightText, DO_CARRY);
     }
 
     displayMainScreen();
