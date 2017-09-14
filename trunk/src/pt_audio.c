@@ -484,6 +484,8 @@ void mixChannels(int32_t numSamples)
                     v->length = v->newLength;
                     v->data   = v->newData;
                 }
+
+                // we don't need to insert ending BLEPs anymore with this constantly running mixer
             }
         }
 

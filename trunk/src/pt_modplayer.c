@@ -78,15 +78,14 @@ void storeTempVariables(void) // this one is accessed in other files, so non-sta
 
 static void setVUMeterHeight(moduleChannel_t *ch)
 {
-    int8_t vol;
+    uint8_t vol;
 
     vol = ch->n_volume;
     if ((ch->n_cmd & 0x0F00) == 0x0C00) // handle Cxx effect
-    {
         vol = ch->n_cmd & 0xFF;
-        if (vol > 0x40)
-            vol = 0x40;
-    }
+
+    if (vol > 64)
+        vol = 64;
 
     if (!editor.muted[ch->n_chanindex])
         editor.vuMeterVolumes[ch->n_chanindex] = vuMeterHeights[vol];
@@ -289,14 +288,14 @@ static void positionJump(moduleChannel_t *ch)
 static void volumeChange(moduleChannel_t *ch)
 {
     ch->n_volume = ch->n_cmd & 0x00FF;
-    if (ch->n_volume > 64)
+    if ((uint8_t)(ch->n_volume) > 64)
         ch->n_volume = 64;
 }
 
 static void patternBreak(moduleChannel_t *ch)
 {
     pBreakPosition = (((ch->n_cmd & 0x00F0) >> 4) * 10) + (ch->n_cmd & 0x000F);
-    if (pBreakPosition > 63)
+    if ((uint8_t)(pBreakPosition) > 63)
         pBreakPosition = 0;
 
     posJumpAssert = 1;
