@@ -730,8 +730,6 @@ static void handleSysMsg(SDL_Event inputEvent)
                     UnmapViewOfFile(sharedMemBuf); sharedMemBuf = NULL;
 
                     SDL_RestoreWindow(window);
-                    SDL_RaiseWindow(window);
-                    SDL_RaiseWindow(window); // needed twice, for some reason...
                 }
 
                 CloseHandle(hMapFile); hMapFile = NULL;
