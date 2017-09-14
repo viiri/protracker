@@ -5,6 +5,7 @@
 #include <SDL2/SDL.h>
 #ifdef _WIN32
 #include <windows.h>
+#include <SDL2/SDL_syswm.h>
 #else
 #include <unistd.h> // chdir()
 #endif
@@ -42,14 +43,22 @@ uint8_t fullscreen = false, vsync60HzPresent = false;
 // -----------------------------
 
 #ifdef _WIN32
+#define SYSMSG_FILE_ARG (WM_USER + 1)
+#define ARGV_SHARED_MEM_MAX_LEN ((PATH_MAX_LEN * 2) + 2)
+
 // for taking control over windows key and numlock on keyboard if app has focus
 uint8_t windowsKeyIsDown;
 HHOOK g_hKeyboardHook;
 HWND hWnd;
-
-// crash handler
-static LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *ptr);
-static uint8_t backupMadeAfterCrash = false;
+static HWND hWnd_to = NULL;
+static HANDLE oneInstHandle = NULL, hMapFile = NULL;
+static LPCTSTR sharedMemBuf = NULL;
+static TCHAR sharedHwndName[] = TEXT("Local\\PTCloneHwnd");
+static TCHAR sharedFileName[] = TEXT("Local\\PTCloneFilename");
+static int8_t handleSingleInstancing(int32_t argc, char **argv);
+static void handleSysMsg(SDL_Event inputEvent);
+static LONG WINAPI exceptionHandler(EXCEPTION_POINTERS *ptr);
+static uint8_t backupMadeAfterCrash;
 #endif
 
 static uint64_t next60HzTime_64bit;
@@ -61,9 +70,9 @@ static void osxSetDirToProgramDirFromArgs(char **argv);
 #endif
 static void handleInput(void);
 static int8_t initializeVars(void);
-static void loadModFromArg(char **argv);
+static void loadModFromArg(char *arg);
 static void handleSigTerm(void);
-static void loadDroppedFile(char *fullPath, uint32_t fullPathLen);
+static void loadDroppedFile(char *fullPath, uint32_t fullPathLen, uint8_t autoPlay);
 static void cleanUp(void);
 static void syncThreadTo60Hz(void);
 static void readMouseXY(void);
@@ -104,7 +113,7 @@ int main(int argc, char *argv[])
                         sdlVer.major, sdlVer.minor, sdlVer.patch,
                         SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
 #endif
-        return (false);
+        return (0);
     }
 
 #ifdef _WIN32
@@ -112,13 +121,13 @@ int main(int argc, char *argv[])
     {
         showErrorMsgBox("Your computer's processor is too old and doesn't have the SSE2 instruction set\n" \
                         "which is needed for this program to run. Sorry!");
-        return (false);
+        return (0);
     }
 
     // for taking control over windows key and numlock on keyboard if app has focus
     windowsKeyIsDown = false;
     g_hKeyboardHook  = SetWindowsHookEx(WH_KEYBOARD_LL, lowLevelKeyboardProc, GetModuleHandle(NULL), 0);
-    SetUnhandledExceptionFilter(ExceptionHandler); // crash handler
+    SetUnhandledExceptionFilter(exceptionHandler); // crash handler
 #endif
 
 #ifdef __APPLE__
@@ -151,6 +160,18 @@ int main(int argc, char *argv[])
         return (1);
     }
 
+    // allow only one instance, and send arguments to it (song to play)
+#ifdef _WIN32
+    if (handleSingleInstancing(argc, argv))
+    {
+        cleanUp();
+        SDL_Quit();
+        return (0);
+    }
+
+    SDL_EventState(SDL_SYSWMEVENT, SDL_ENABLE);
+#endif
+
     if (!setupAudio())
     {
         cleanUp();
@@ -164,7 +185,7 @@ int main(int argc, char *argv[])
         cleanUp();
         SDL_Quit();
 
-        return (false);
+        return (0);
     }
 
     if (!unpackBMPs())
@@ -237,7 +258,7 @@ int main(int argc, char *argv[])
     // load a .MOD from the command arguments if passed (also ignore OS X < 10.9 -psn argument on double-click launch)
     if (((argc >= 2) && (strlen(argv[1]) > 0)) && !((argc == 2) && (!strncmp(argv[1], "-psn_", 5))))
     {
-        loadModFromArg(argv);
+        loadModFromArg(argv[1]);
 
         // play song
         if (modEntry->moduleLoaded)
@@ -262,6 +283,7 @@ int main(int argc, char *argv[])
     // setup timer stuff
     next60HzTime_64bit = SDL_GetPerformanceCounter() + (uint64_t)(((double)(SDL_GetPerformanceFrequency()) / REAL_VBLANK_HZ) + 0.5);
 
+    SDL_ShowWindow(window);
     while (editor.programRunning)
     {
         syncThreadTo60Hz();
@@ -300,6 +322,9 @@ static void handleInput(void)
 
     while (SDL_PollEvent(&inputEvent))
     {
+#ifdef _WIN32
+        handleSysMsg(inputEvent);
+#endif
         if (editor.ui.editTextFlag && (inputEvent.type == SDL_TEXTINPUT))
         {
             // text input when editing texts/numbers
@@ -320,9 +345,9 @@ static void handleInput(void)
         }
         else if (inputEvent.type == SDL_DROPFILE)
         {
-            SDL_RaiseWindow(window); // set window focus
-            loadDroppedFile(inputEvent.drop.file, strlen(inputEvent.drop.file));
+            loadDroppedFile(inputEvent.drop.file, strlen(inputEvent.drop.file), false);
             SDL_free(inputEvent.drop.file);
+            SDL_RaiseWindow(window); // set window focus
         }
         if (inputEvent.type == SDL_QUIT)
         {
@@ -523,7 +548,7 @@ static int8_t initializeVars(void)
     return (true);
 }
 
-static void loadModFromArg(char **argv)
+static void loadModFromArg(char *arg)
 {
     uint32_t filenameLen;
     UNICHAR *filenameU;
@@ -531,7 +556,7 @@ static void loadModFromArg(char **argv)
     editor.ui.introScreenShown = false;
     setStatusMessage(editor.allRightText, DO_CARRY);
 
-    filenameLen = strlen(argv[1]);
+    filenameLen = strlen(arg);
 
     filenameU = (UNICHAR *)(calloc((filenameLen + 2), sizeof (UNICHAR)));
     if (filenameU == NULL)
@@ -543,9 +568,9 @@ static void loadModFromArg(char **argv)
     }
 
 #ifdef _WIN32
-    MultiByteToWideChar(CP_UTF8, 0, argv[1], -1, filenameU, filenameLen);
+    MultiByteToWideChar(CP_UTF8, 0, arg, -1, filenameU, filenameLen);
 #else
-    strcpy(filenameU, argv[1]);
+    strcpy(filenameU, arg);
 #endif
 
     tempMod = modLoad(filenameU);
@@ -622,9 +647,98 @@ static void handleSigTerm(void)
     }
 }
 
-// CRASH HANDLER (borrowed some code from MilkyTracker)
+// Windows specific routines
 #ifdef _WIN32
-static LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *ptr)
+static int8_t instanceAlreadyOpen(void)
+{
+    hMapFile = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, sharedHwndName);
+    if (hMapFile != NULL)
+        return (true); /* another instance is already open */
+
+    /* no instance is open, let's created a shared memory file with hWnd in it */
+    oneInstHandle = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof (HWND), sharedHwndName);
+    if (oneInstHandle != NULL)
+    {
+        sharedMemBuf = (LPTSTR)(MapViewOfFile(oneInstHandle, FILE_MAP_ALL_ACCESS, 0, 0, sizeof (HWND)));
+        if (sharedMemBuf != NULL)
+        {
+            CopyMemory((PVOID)(sharedMemBuf), &hWnd, sizeof (HWND));
+            UnmapViewOfFile(sharedMemBuf); sharedMemBuf = NULL;
+        }
+    }
+
+    return (false);
+}
+
+static int8_t handleSingleInstancing(int32_t argc, char **argv)
+{
+    if (instanceAlreadyOpen())
+    {
+        if ((argc >= 2) && (strlen(argv[1]) > 0))
+        {
+            sharedMemBuf = (LPTSTR)(MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof (HWND)));
+            if (sharedMemBuf != NULL)
+            {
+                memcpy(&hWnd_to, sharedMemBuf, sizeof (HWND));
+                UnmapViewOfFile(sharedMemBuf); sharedMemBuf = NULL;
+                CloseHandle(hMapFile); hMapFile = NULL;
+
+                hMapFile = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, ARGV_SHARED_MEM_MAX_LEN, sharedFileName);
+                if (hMapFile != NULL)
+                {
+                    sharedMemBuf = (LPTSTR)(MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, ARGV_SHARED_MEM_MAX_LEN));
+                    if (sharedMemBuf != NULL)
+                    {
+                        strcpy((char *)(sharedMemBuf), argv[1]);
+                        UnmapViewOfFile(sharedMemBuf); sharedMemBuf = NULL;
+
+                        SendMessageA(hWnd_to, SYSMSG_FILE_ARG, 0, 0);
+                        SDL_Delay(100); // wait a bit to make sure first instance received msg
+
+                        CloseHandle(hMapFile); hMapFile = NULL;
+
+                        return (true); // quit instance now
+                    }
+                }
+
+                return (true);
+            }
+
+            CloseHandle(hMapFile); hMapFile = NULL;
+        }
+    }
+
+    return (false);
+}
+
+static void handleSysMsg(SDL_Event inputEvent)
+{
+    SDL_SysWMmsg *wmMsg;
+
+    if (inputEvent.type == SDL_SYSWMEVENT)
+    {
+        wmMsg = inputEvent.syswm.msg;
+        if ((wmMsg->subsystem == SDL_SYSWM_WINDOWS) && (wmMsg->msg.win.msg == SYSMSG_FILE_ARG))
+        {
+            hMapFile = OpenFileMappingA(FILE_MAP_READ, FALSE, sharedFileName);
+            if (hMapFile != NULL)
+            {
+                sharedMemBuf = (LPTSTR)(MapViewOfFile(hMapFile, FILE_MAP_READ, 0, 0, ARGV_SHARED_MEM_MAX_LEN));
+                if (sharedMemBuf != NULL)
+                {
+                    loadDroppedFile((char *)(sharedMemBuf), strlen(sharedMemBuf), true);
+                    UnmapViewOfFile(sharedMemBuf); sharedMemBuf = NULL;
+
+                    SDL_RestoreWindow(window);
+                }
+
+                CloseHandle(hMapFile); hMapFile = NULL;
+            }
+        }
+    }
+}
+
+static LONG WINAPI exceptionHandler(EXCEPTION_POINTERS *ptr)
 {
 #define BACKUP_FILES_TO_TRY 1000
 
@@ -634,6 +748,13 @@ static LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *ptr)
     struct stat statBuffer;
 
     (void)(ptr);
+
+    // Important: Try to clear the "only one" instance handle!
+    if (oneInstHandle != NULL)
+    {
+        CloseHandle(oneInstHandle);
+        oneInstHandle = NULL;
+    }
 
     if (backupMadeAfterCrash == false)
     {
@@ -668,10 +789,9 @@ static LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *ptr)
 
         backupMadeAfterCrash = true;
 
-        MessageBoxA(hWnd, "Oh no!\nProTracker has crashed...\n\nA backup .MOD was hopefully " \
-                          "saved to the program directory.\n\nPlease report this to 8bitbubsy " \
-                          "(IRC or olav.sorensen@live.no).\nTry to mention what you did before the crash happened.",
-                          "Critical Error", MB_OK | MB_ICONERROR);
+        showErrorMsgBox("Oh no!\nProTracker has crashed...\n\nA backup .MOD was hopefully " \
+                        "saved to the program directory.\n\nPlease report this to 8bitbubsy " \
+                        "(IRC or olav.sorensen@live.no).\nTry to mention what you did before the crash happened.");
     }
 
     return (EXCEPTION_CONTINUE_SEARCH);
@@ -708,10 +828,10 @@ static uint8_t testExtension(char *ext, uint8_t extLen, char *fullPath)
     return (false);
 }
 
-static void loadDroppedFile(char *fullPath, uint32_t fullPathLen)
+static void loadDroppedFile(char *fullPath, uint32_t fullPathLen, uint8_t autoPlay)
 {
     char *fileName, *ansiName;
-    uint8_t isMod;
+    uint8_t isMod, songWasPlaying;
     UNICHAR *fullPathU;
 
     if (editor.diskop.isFilling || editor.isWAVRendering)
@@ -769,11 +889,12 @@ static void loadDroppedFile(char *fullPath, uint32_t fullPathLen)
 
     if (isMod)
     {
+        songWasPlaying = editor.songPlaying;
+
         tempMod = modLoad(fullPathU);
         if (tempMod != NULL)
         {
             modStop();
-
             modEntry->moduleLoaded = false;
             modFree();
             modEntry = tempMod;
@@ -791,6 +912,15 @@ static void loadDroppedFile(char *fullPath, uint32_t fullPathLen)
             {
                 editor.ui.samplerScreenShown = false;
                 samplerScreen();
+            }
+
+            if (songWasPlaying || autoPlay)
+            {
+                editor.playMode = PLAY_MODE_NORMAL;
+                modPlay(DONT_SET_PATTERN, 0, DONT_SET_ROW);
+                editor.currMode = MODE_PLAY;
+                pointerSetMode(POINTER_MODE_PLAY, DO_CARRY);
+                setStatusMessage(editor.allRightText, DO_CARRY);
             }
         }
         else
@@ -816,14 +946,15 @@ static void cleanUp(void) // never call this inside the main loop!
 {
     audioClose();
 
-    SDL_RemoveTimer(timer50Hz);
+    if (timer50Hz != 0)
+        SDL_RemoveTimer(timer50Hz);
 
     modFree();
 
-    free(editor.rowVisitTable);
-    free(editor.ui.pattNames);
-    free(editor.tempSample);
-    free(editor.scopeBuffer);
+    if (editor.rowVisitTable != NULL) free(editor.rowVisitTable);
+    if (editor.ui.pattNames  != NULL) free(editor.ui.pattNames);
+    if (editor.tempSample    != NULL) free(editor.tempSample);
+    if (editor.scopeBuffer   != NULL) free(editor.scopeBuffer);
 
     deAllocSamplerVars();
     deAllocDiskOpVars();
@@ -831,12 +962,13 @@ static void cleanUp(void) // never call this inside the main loop!
     freeBMPs();
     terminalFree();
 
-    free(ptConfig.defaultDiskOpDir);
+    if (ptConfig.defaultDiskOpDir != NULL) free(ptConfig.defaultDiskOpDir);
     videoClose();
     freeSprites();
 
 #ifdef _WIN32
     UnhookWindowsHookEx(g_hKeyboardHook);
+    if (oneInstHandle != NULL) CloseHandle(oneInstHandle);
 #endif
 }
 

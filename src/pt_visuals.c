@@ -1,4 +1,8 @@
 #include <SDL2/SDL.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <SDL2/SDL_syswm.h>
+#endif
 #include <stdint.h>
 #include <ctype.h> // tolower()
 #include "pt_header.h"
@@ -34,6 +38,9 @@ extern SDL_Renderer *renderer;   // pt_main.c
 extern SDL_Texture *texture;     // pt_main.c
 extern uint8_t vsync60HzPresent; // pt_main.c
 extern uint8_t fullscreen;       // pt_main.c
+#ifdef _WIN32
+extern HWND hWnd; // pt_main.c
+#endif
 
 sprite_t sprites[SPRITE_NUM];
 
@@ -2926,6 +2933,9 @@ int8_t setupVideo(void)
     int32_t screenW, screenH;
     uint32_t windowFlags, rendererFlags, textureFormat;
     SDL_DisplayMode dm;
+#ifdef _WIN32
+    SDL_SysWMinfo wmInfo;
+#endif
 
     screenW = SCREEN_W * editor.ui.videoScaleFactor;
     screenH = SCREEN_H * editor.ui.videoScaleFactor;
@@ -2971,14 +2981,25 @@ int8_t setupVideo(void)
     SDL_SetWindowTitle(window, "ProTracker v2.3D");
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 
-    window = SDL_CreateWindow("ProTracker v2.3D", SDL_WINDOWPOS_UNDEFINED,
-                              SDL_WINDOWPOS_UNDEFINED, screenW, screenH,
-                              windowFlags);
+    window = SDL_CreateWindow("ProTracker v2.3D", SDL_WINDOWPOS_CENTERED,
+                              SDL_WINDOWPOS_CENTERED, screenW, screenH,
+                              windowFlags | SDL_WINDOW_HIDDEN);
     if (window == NULL)
     {
         showErrorMsgBox("Couldn't create SDL window:\n%s", SDL_GetError());
         return (false);
     }
+
+#ifdef _WIN32
+    SDL_VERSION(&wmInfo.version);
+    if (SDL_GetWindowWMInfo(window, &wmInfo) == SDL_FALSE)
+    {
+        showErrorMsgBox("SDL_GetWindowWMInfo() failed:\n%s", SDL_GetError());
+        return (false);
+    }
+
+    hWnd = wmInfo.info.win.window;
+#endif
 
     renderer = SDL_CreateRenderer(window, -1, rendererFlags);
     if (renderer == NULL)

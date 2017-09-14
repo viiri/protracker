@@ -325,7 +325,7 @@ struct editor_t
     int8_t blankSample[320]; // for scopes
 
     char mixText[16], outOfMemoryText[18], modLoadOoMText[39], diskOpListOoMText[42];
-    char allRightText[10], *entryNameTmp, *currPath;
+    char allRightText[10], *entryNameTmp, *currPath, *dropTempFileName;
     UNICHAR *fileNameTmp, *currPathU;
 
     int8_t smpRedoFinetunes[MOD_SAMPLES], smpRedoVolumes[MOD_SAMPLES], multiModeNext[4];
@@ -336,7 +336,7 @@ struct editor_t
     int8_t mixFlag, modLoaded, fullScreenFlag, autoInsFlag, autoInsSlot, repeatKeyFlag, sampleZero;
     int8_t accidental, transDelFlag, chordLengthMin, compoMode;
     uint8_t muted[AMIGA_VOICES], *rowVisitTable, playMode, songPlaying, currMode, useLEDFilter;
-    uint8_t tuningFlag, pNoteFlag, tuningVol, errorMsgCounter, stepPlayEnabled, stepPlayBackwards;
+    uint8_t tuningFlag, tuningChan, tuningVol, pNoteFlag, errorMsgCounter, stepPlayEnabled, stepPlayBackwards;
     uint8_t blockBufferFlag, buffFromPos, buffToPos, blockFromPos, blockToPos, blockMarkFlag, didQuantize;
     uint8_t timingMode, swapChannelFlag, f6Pos, f7Pos, f8Pos, f9Pos, f10Pos, keyOctave, tuningNote;
     uint8_t resampleNote, initialTempo, initialSpeed, editMoveAdd, configFound, abortMod2Wav, blepSynthesis;

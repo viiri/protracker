@@ -1372,27 +1372,32 @@ void filterSample(int8_t sample, int8_t ignoreMark)
 
 void toggleTuningTone(void)
 {
-    uint8_t i;
-
     if ((editor.currMode == MODE_PLAY) || (editor.currMode == MODE_RECORD))
         return;
 
-    i = (editor.cursor.channel + 1) & 3;
-
     editor.tuningFlag ^= 1;
-    if (editor.tuningFlag && (editor.tuningNote <= 35))
+    if (editor.tuningFlag)
     {
-        // tuning tone toggled on
-        paulaSetVolume(i, editor.tuningVol);
-        paulaSetPeriod(i, periodTable[editor.tuningNote]);
-        paulaSetData(i, tuneToneData);
-        paulaSetLength(i, sizeof (tuneToneData));
-        paulaRestartDMA(i);
+        // turn tuning tone on
+
+        editor.tuningChan = (editor.cursor.channel + 1) & 3;
+
+        if (editor.tuningNote > 35)
+            editor.tuningNote = 35;
+
+        paulaSetPeriod(editor.tuningChan, periodTable[editor.tuningNote]);
+        paulaSetVolume(editor.tuningChan, 64);
+        paulaSetData(editor.tuningChan, tuneToneData);
+        paulaSetLength(editor.tuningChan, sizeof (tuneToneData));
+        paulaRestartDMA(editor.tuningChan);
+
+        // force loop flag on for scopes
+        scope[editor.tuningChan].newLoopFlag = scope[editor.tuningChan].loopFlag = true;
     }
     else
     {
-        // tuning tone toggled off
-        mixerKillVoice(i);
+        // turn tuning tone off
+        mixerKillVoice(editor.tuningChan);
     }
 }
 
