@@ -1,5 +1,6 @@
 #include <SDL2/SDL.h>
 #ifdef _WIN32
+#define WIN32_MEAN_AND_LEAN
 #include <windows.h>
 #include <SDL2/SDL_syswm.h>
 #endif
@@ -38,10 +39,6 @@ extern SDL_Renderer *renderer;   // pt_main.c
 extern SDL_Texture *texture;     // pt_main.c
 extern uint8_t vsync60HzPresent; // pt_main.c
 extern uint8_t fullscreen;       // pt_main.c
-#ifdef _WIN32
-extern HWND hWnd; // pt_main.c
-#endif
-
 sprite_t sprites[SPRITE_NUM];
 
 // sprite background refresh buffers
@@ -2998,7 +2995,7 @@ int8_t setupVideo(void)
         return (false);
     }
 
-    hWnd = wmInfo.info.win.window;
+    editor.ui.hWnd = wmInfo.info.win.window;
 #endif
 
     renderer = SDL_CreateRenderer(window, -1, rendererFlags);

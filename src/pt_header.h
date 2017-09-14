@@ -2,6 +2,10 @@
 #define __PT_HEADER_H
 
 #include <SDL2/SDL.h>
+#ifdef _WIN32
+#define WIN32_MEAN_AND_LEAN
+#include <windows.h>
+#endif
 #include <stdint.h>
 #include "pt_unicode.h"
 
@@ -381,6 +385,9 @@ struct editor_t
 
     struct ui_t
     {
+#ifdef _WIN32
+        HWND hWnd;
+#endif
         char statusMessage[18], prevStatusMessage[18], *pattNames;
         char *dstPtr, *editPos, *textEndPtr, *showTextPtr;
 

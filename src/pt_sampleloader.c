@@ -26,8 +26,8 @@
 
 enum
 {
-    WAVE_FORMAT_PCM        = 0x0001,
-    WAVE_FORMAT_IEEE_FLOAT = 0x0003
+    WAV_FORMAT_PCM        = 0x0001,
+    WAV_FORMAT_IEEE_FLOAT = 0x0003
 };
 
 static int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSampling);
@@ -216,7 +216,7 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
         return (false);
     }
 
-    if ((audioFormat != WAVE_FORMAT_PCM) && (audioFormat != WAVE_FORMAT_IEEE_FLOAT))
+    if ((audioFormat != WAV_FORMAT_PCM) && (audioFormat != WAV_FORMAT_IEEE_FLOAT))
     {
         displayErrorMsg("WAV UNSUPPORTED !");
         terminalPrintf("WAV sample loading failed: unsupported type (not PCM integer or PCM float)\n");
@@ -235,7 +235,7 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
         return (false);
     }
 
-    if ((audioFormat == WAVE_FORMAT_IEEE_FLOAT) && (bitsPerSample != 32))
+    if ((audioFormat == WAV_FORMAT_IEEE_FLOAT) && (bitsPerSample != 32))
     {
         displayErrorMsg("WAV UNSUPPORTED !");
         terminalPrintf("WAV sample loading failed: unsupported type (not 8-bit, 16-bit, 24-bit, 32-bit or 32-bit float)\n");
@@ -488,7 +488,7 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
 
         free(audioDataS32);
     }
-    else if ((audioFormat == WAVE_FORMAT_PCM) && (bitsPerSample == 32)) // 32-BIT INTEGER SAMPLE
+    else if ((audioFormat == WAV_FORMAT_PCM) && (bitsPerSample == 32)) // 32-BIT INTEGER SAMPLE
     {
         sampleLength /= 4;
         if (sampleLength > (MAX_SAMPLE_LEN * 4))
@@ -556,7 +556,7 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
 
         free(audioDataS32);
     }
-    else if ((audioFormat == WAVE_FORMAT_IEEE_FLOAT) && (bitsPerSample == 32)) // 32-BIT FLOAT SAMPLE
+    else if ((audioFormat == WAV_FORMAT_IEEE_FLOAT) && (bitsPerSample == 32)) // 32-BIT FLOAT SAMPLE
     {
         sampleLength /= 4;
         if (sampleLength > (MAX_SAMPLE_LEN * 4))
