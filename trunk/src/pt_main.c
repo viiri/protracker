@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <SDL2/SDL.h>
 #ifdef _WIN32
+#define WIN32_MEAN_AND_LEAN
 #include <windows.h>
 #include <SDL2/SDL_syswm.h>
 #else
@@ -49,7 +50,6 @@ uint8_t fullscreen = false, vsync60HzPresent = false;
 // for taking control over windows key and numlock on keyboard if app has focus
 uint8_t windowsKeyIsDown;
 HHOOK g_hKeyboardHook;
-HWND hWnd;
 static HWND hWnd_to = NULL;
 static HANDLE oneInstHandle = NULL, hMapFile = NULL;
 static LPCTSTR sharedMemBuf = NULL;
@@ -662,7 +662,7 @@ static int8_t instanceAlreadyOpen(void)
         sharedMemBuf = (LPTSTR)(MapViewOfFile(oneInstHandle, FILE_MAP_ALL_ACCESS, 0, 0, sizeof (HWND)));
         if (sharedMemBuf != NULL)
         {
-            CopyMemory((PVOID)(sharedMemBuf), &hWnd, sizeof (HWND));
+            CopyMemory((PVOID)(sharedMemBuf), &editor.ui.hWnd, sizeof (HWND));
             UnmapViewOfFile(sharedMemBuf); sharedMemBuf = NULL;
         }
     }
@@ -730,6 +730,8 @@ static void handleSysMsg(SDL_Event inputEvent)
                     UnmapViewOfFile(sharedMemBuf); sharedMemBuf = NULL;
 
                     SDL_RestoreWindow(window);
+                    SDL_RaiseWindow(window);
+                    SDL_RaiseWindow(window); // needed twice, for some reason...
                 }
 
                 CloseHandle(hMapFile); hMapFile = NULL;
