@@ -331,7 +331,7 @@ void paulaSetPeriod(uint8_t ch, uint16_t period)
         v->delta_f = hz_f / audioFreq_f;
     }
 
-    scope[ch].delta_f = hz_f / REAL_VBLANK_HZ;
+    scope[ch].delta_f = hz_f / VBLANK_HZ;
 
     if (v->lastDelta_f == 0.0f)
         v->lastDelta_f = v->delta_f;
