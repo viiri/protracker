@@ -2937,7 +2937,7 @@ int8_t setupVideo(void)
     screenW = SCREEN_W * editor.ui.videoScaleFactor;
     screenH = SCREEN_H * editor.ui.videoScaleFactor;
 
-    windowFlags   = SDL_WINDOW_MOUSE_FOCUS | SDL_WINDOW_INPUT_FOCUS;
+    windowFlags   = SDL_WINDOW_HIDDEN;
     rendererFlags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE;
     textureFormat = SDL_PIXELFORMAT_RGB888;
 
@@ -2965,6 +2965,8 @@ int8_t setupVideo(void)
         return (false);
     }
 
+    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
+
     vsync60HzPresent = false;
     if (SDL_GetDesktopDisplayMode(0, &dm) == 0)
     {
@@ -2980,7 +2982,7 @@ int8_t setupVideo(void)
 
     window = SDL_CreateWindow("ProTracker v2.3D", SDL_WINDOWPOS_CENTERED,
                               SDL_WINDOWPOS_CENTERED, screenW, screenH,
-                              windowFlags | SDL_WINDOW_HIDDEN);
+                              windowFlags);
     if (window == NULL)
     {
         showErrorMsgBox("Couldn't create SDL window:\n%s", SDL_GetError());
@@ -3049,10 +3051,6 @@ int8_t setupVideo(void)
     }
 
     SDL_ShowCursor(SDL_DISABLE);
-
-    if (!vsync60HzPresent)
-        SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
-
     updateMouseScaling();
 
     return (true);
