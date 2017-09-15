@@ -14,7 +14,7 @@ const int16_t mixScaleTable[AMIGA_VOICES] = { 388, 570, 595, 585 };
 
 scopeChannel_t scope[4];
 static SDL_Thread *scopeThread;
-static uint64_t next60HzTime_64bit;
+static uint64_t nextTime_64bit;
 
 extern int8_t forceMixerOff;  // pt_audio.c
 extern uint32_t *pixelBuffer; // pt_main.c
@@ -216,8 +216,9 @@ void drawScopes(void)
     }
 }
 
-static void syncScopeThreadTo60Hz(void)
+static void syncScopeThread(void)
 {
+    int32_t delayMs;
     uint64_t timeNow_64bit;
     double delayMs_f, perfFreq_f, frameLength_f;
 
@@ -226,14 +227,17 @@ static void syncScopeThreadTo60Hz(void)
         return; // panic!
 
     timeNow_64bit = SDL_GetPerformanceCounter();
-    if (next60HzTime_64bit > timeNow_64bit)
+    if (nextTime_64bit > timeNow_64bit)
     {
-        delayMs_f = ((double)(next60HzTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f)) + 0.5;
-        SDL_Delay((uint32_t)(delayMs_f));
+        delayMs_f = ((nextTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f)) + 0.5;
+
+        delayMs = (int32_t)(delayMs_f);
+        if (delayMs > 0)
+            SDL_Delay(delayMs);
     }
 
-    frameLength_f       = (perfFreq_f / VBLANK_HZ) + 0.5;
-    next60HzTime_64bit += (uint64_t)(frameLength_f);
+    frameLength_f   = (perfFreq_f / VBLANK_HZ) + 0.5;
+    nextTime_64bit += (uint64_t)(frameLength_f);
 }
 
 int32_t scopeThreadFunc(void *ptr)
@@ -243,7 +247,7 @@ int32_t scopeThreadFunc(void *ptr)
     SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
     while (editor.programRunning)
     {
-        syncScopeThreadTo60Hz();
+        syncScopeThread();
         updateScopes();
     }
 
@@ -254,8 +258,8 @@ uint8_t initScopes(void)
 {
     double frameLength_f;
 
-    frameLength_f      = ((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5;
-    next60HzTime_64bit = SDL_GetPerformanceCounter() + (uint64_t)(frameLength_f);
+    frameLength_f  = ((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5;
+    nextTime_64bit = SDL_GetPerformanceCounter() + (uint64_t)(frameLength_f);
 
     scopeThread = SDL_CreateThread(scopeThreadFunc, "PT Clone Scope Thread", NULL);
     if (scopeThread == NULL)

@@ -61,7 +61,7 @@ static LONG WINAPI exceptionHandler(EXCEPTION_POINTERS *ptr);
 static uint8_t backupMadeAfterCrash;
 #endif
 
-static uint64_t next60HzTime_64bit;
+static uint64_t nextTime_64bit;
 static SDL_TimerID timer50Hz;
 static module_t *tempMod;
 
@@ -74,7 +74,7 @@ static void loadModFromArg(char *arg);
 static void handleSigTerm(void);
 static void loadDroppedFile(char *fullPath, uint32_t fullPathLen, uint8_t autoPlay);
 static void cleanUp(void);
-static void syncThreadTo60Hz(void);
+static void syncMainThread(void);
 static void readMouseXY(void);
 
 int main(int argc, char *argv[])
@@ -133,8 +133,6 @@ int main(int argc, char *argv[])
 #ifdef __APPLE__
     osxSetDirToProgramDirFromArgs(argv);
 #endif
-
-    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
 
     if (!initializeVars())
     {
@@ -281,12 +279,12 @@ int main(int argc, char *argv[])
     updateCursorPos();
 
     // setup timer stuff
-    next60HzTime_64bit = SDL_GetPerformanceCounter() + (uint32_t)(((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5);
+    nextTime_64bit = SDL_GetPerformanceCounter() + (uint32_t)(((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5);
 
     SDL_ShowWindow(window);
     while (editor.programRunning)
     {
-        syncThreadTo60Hz();
+        syncMainThread();
         readMouseXY();
         eraseSprites();
         updateKeyModifiers(); // set/clear CTRL/ALT/SHIFT/AMIGA key states
@@ -972,10 +970,11 @@ static void cleanUp(void) // never call this inside the main loop!
 #endif
 }
 
-static void syncThreadTo60Hz(void)
+static void syncMainThread(void)
 {
     // this routine almost never delays if we have 60Hz vsync, but it's still needed for safety
 
+    int32_t delayMs;
     uint64_t timeNow_64bit;
     double delayMs_f, perfFreq_f, frameLength_f;
 
@@ -984,14 +983,17 @@ static void syncThreadTo60Hz(void)
         return; // panic!
 
     timeNow_64bit = SDL_GetPerformanceCounter();
-    if (next60HzTime_64bit > timeNow_64bit)
+    if (nextTime_64bit > timeNow_64bit)
     {
-        delayMs_f = (double)(next60HzTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f);
-        SDL_Delay((uint32_t)(delayMs_f + 0.5));
+        delayMs_f = ((nextTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f)) + 0.5;
+
+        delayMs = (int32_t)(delayMs_f);
+        if (delayMs > 0)
+            SDL_Delay(delayMs);
     }
 
-    frameLength_f = perfFreq_f / VBLANK_HZ;
-    next60HzTime_64bit += (uint32_t)(frameLength_f + 0.5);
+    frameLength_f   = (perfFreq_f / VBLANK_HZ) + 0.5;
+    nextTime_64bit += (uint64_t)(frameLength_f);
 }
 
 static void readMouseXY(void)
