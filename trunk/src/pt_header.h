@@ -35,8 +35,7 @@
 #define SCREEN_W 320
 #define SCREEN_H 255
 
-#define VBLANK_HZ      60
-#define REAL_VBLANK_HZ (VBLANK_HZ / 1.001)
+#define VBLANK_HZ 60
 
 #define FONT_CHAR_W 8 // actual data length is 7, includes right spacing (1px column)
 #define FONT_CHAR_H 5

@@ -216,31 +216,34 @@ void drawScopes(void)
     }
 }
 
-int32_t scopeThreadFunc(void *ptr)
+static void syncScopeThreadTo60Hz(void)
 {
     uint64_t timeNow_64bit;
     double delayMs_f, perfFreq_f, frameLength_f;
 
+    perfFreq_f = (double)(SDL_GetPerformanceFrequency()); // should be safe for double
+    if (perfFreq_f <= 0.0)
+        return; // panic!
+
+    timeNow_64bit = SDL_GetPerformanceCounter();
+    if (next60HzTime_64bit > timeNow_64bit)
+    {
+        delayMs_f = ((double)(next60HzTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f)) + 0.5;
+        SDL_Delay((uint32_t)(delayMs_f));
+    }
+
+    frameLength_f       = (perfFreq_f / VBLANK_HZ) + 0.5;
+    next60HzTime_64bit += (uint64_t)(frameLength_f);
+}
+
+int32_t scopeThreadFunc(void *ptr)
+{
     (void)(ptr);
 
     SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
-
     while (editor.programRunning)
     {
-        perfFreq_f = (double)(SDL_GetPerformanceFrequency()); // should be safe for double 
-        if (perfFreq_f == 0.0)
-            continue; // panic!
-
-        timeNow_64bit = SDL_GetPerformanceCounter();
-        if (next60HzTime_64bit > timeNow_64bit)
-        {
-            delayMs_f = (double)(next60HzTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f); // should be safe for double
-            SDL_Delay((uint32_t)(delayMs_f + 0.5));
-        }
-
-        frameLength_f = perfFreq_f / REAL_VBLANK_HZ;
-        next60HzTime_64bit += (uint32_t)(frameLength_f + 0.5);
-
+        syncScopeThreadTo60Hz();
         updateScopes();
     }
 
@@ -251,8 +254,8 @@ uint8_t initScopes(void)
 {
     double frameLength_f;
 
-    frameLength_f = (double)(SDL_GetPerformanceFrequency()) / REAL_VBLANK_HZ;
-    next60HzTime_64bit = SDL_GetPerformanceCounter() + (uint32_t)(frameLength_f + 0.5);
+    frameLength_f      = ((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5;
+    next60HzTime_64bit = SDL_GetPerformanceCounter() + (uint64_t)(frameLength_f);
 
     scopeThread = SDL_CreateThread(scopeThreadFunc, "PT Clone Scope Thread", NULL);
     if (scopeThread == NULL)
