@@ -1829,7 +1829,7 @@ void handleSamplerVolumeBox(void)
     uint8_t i;
     int16_t sample, sampleVol;
     int32_t sampleIndex, sampleLength;
-    double smp;
+    float smp_f;
     moduleSample_t *s;
 
     if (input.mouse.rightButtonPressed)
@@ -2140,16 +2140,18 @@ void handleSamplerVolumeBox(void)
             sampleIndex = 0;
             while (sampleIndex < sampleLength)
             {
-                smp  = (sampleIndex * editor.vol2) / (double)(sampleLength);
-                smp += ((sampleLength - sampleIndex) * editor.vol1) / (double)(sampleLength);
-                smp *= (double)(*sampleData);
-                smp /= 100.0;
-                smp = ROUND_SMP_D(smp);
+                smp_f  = (sampleIndex * editor.vol2) / (float)(sampleLength);
+                smp_f += ((sampleLength - sampleIndex) * editor.vol1) / (float)(sampleLength);
+                smp_f *= (float)(*sampleData);
+                smp_f /= 100.0f;
+                smp_f  = roundf(smp_f);
 
-                *sampleData++ = (int8_t)(CLAMP(smp, -128.0, 127.0));
+                *sampleData++ = (int8_t)(CLAMP(smp_f, -128.0f, 127.0f));
 
                 sampleIndex++;
             }
+
+            fixSampleBeep(s);
 
             editor.ui.samplerVolBoxShown = false;
             removeSamplerVolBox();
@@ -2958,7 +2960,7 @@ int8_t handleLeftMouseButton(void)
     uint8_t i;
     int16_t tmp16;
     int32_t j, modPos, guiButton;
-    double smp;
+    float smp_f;
     moduleSample_t *s;
 
     if (editor.swapChannelFlag || editor.ui.editTextFlag)
@@ -3414,10 +3416,10 @@ int8_t handleLeftMouseButton(void)
 
                             if (editor.halfClipFlag == 0)
                             {
-                                smp = tmp16 / 2.0;
-                                smp = ROUND_SMP_D(smp);
+                                smp_f = tmp16 / 2.0f;
+                                smp_f = roundf(smp_f);
 
-                                *ptr8_2++ = (int8_t)(CLAMP(smp, -128.0, 127.0));
+                                *ptr8_2++ = (int8_t)(CLAMP(smp_f, -128.0f, 127.0f));
                             }
                             else
                             {
@@ -3445,6 +3447,7 @@ int8_t handleLeftMouseButton(void)
 
                         free(ptr8_4);
 
+                        fixSampleBeep(s);
                         if (editor.ui.samplerScreenShown)
                             displaySample();
 
@@ -3484,10 +3487,10 @@ int8_t handleLeftMouseButton(void)
 
                     for (j = 0; j < s->length; ++j)
                     {
-                        smp = (*ptr8_2 + *ptr8_1) / 2.0;
-                        smp = ROUND_SMP_D(smp);
+                        smp_f = (*ptr8_2 + *ptr8_1) / 2.0f;
+                        smp_f = roundf(smp_f);
 
-                        *ptr8_1++ = (int8_t)(CLAMP(smp, -128.0, 127.0));
+                        *ptr8_1++ = (int8_t)(CLAMP(smp_f, -128.0f, 127.0f));
 
                         if (editor.modulateSpeed == 0)
                         {
@@ -3513,6 +3516,7 @@ int8_t handleLeftMouseButton(void)
                             ptr8_3[j] = (int8_t)(CLAMP(ptr8_3[j] * 2, -128, 127));
                     }
 
+                    fixSampleBeep(s);
                     if (editor.ui.samplerScreenShown)
                         displaySample();
 
@@ -3660,6 +3664,7 @@ int8_t handleLeftMouseButton(void)
 
                     free(ptr8_3);
 
+                    fixSampleBeep(s);
                     if (editor.ui.samplerScreenShown)
                         displaySample();
 
@@ -3699,12 +3704,12 @@ int8_t handleLeftMouseButton(void)
                         tmp16 = *ptr8_1 + *ptr8_2;
                         if (editor.halfClipFlag == 0)
                         {
-                            smp = tmp16 / 2.0;
-                            smp = ROUND_SMP_D(smp);
-                            smp = CLAMP(smp, -128.0, 127.0);
+                            smp_f = tmp16 / 2.0f;
+                            smp_f = roundf(smp_f);
+                            smp_f = CLAMP(smp_f, -128.0f, 127.0f);
 
-                            *ptr8_1++ = (int8_t)(smp);
-                            *ptr8_2-- = (int8_t)(smp);
+                            *ptr8_1++ = (int8_t)(smp_f);
+                            *ptr8_2-- = (int8_t)(smp_f);
                         }
                         else
                         {
@@ -3716,6 +3721,7 @@ int8_t handleLeftMouseButton(void)
                     }
                     while (ptr8_1 < ptr8_2);
 
+                    fixSampleBeep(s);
                     if (editor.ui.samplerScreenShown)
                         displaySample();
 
@@ -3752,6 +3758,7 @@ int8_t handleLeftMouseButton(void)
                     }
                     while (ptr8_1 < ptr8_2);
 
+                    fixSampleBeep(s);
                     if (editor.ui.samplerScreenShown)
                         displaySample();
 
@@ -3799,6 +3806,7 @@ int8_t handleLeftMouseButton(void)
                     s->length = (s->length - editor.samplePos) & 0xFFFFFFFE;
 
                     editor.samplePos = 0;
+                    fixSampleBeep(s);
                     updateCurrSample();
 
                     updateWindowTitle(MOD_IS_MODIFIED);
@@ -3831,13 +3839,14 @@ int8_t handleLeftMouseButton(void)
                     ptr8_1 = &modEntry->sampleData[s->offset];
                     for (j = 0; j < editor.samplePos; ++j)
                     {
-                        smp = (*ptr8_1) * (j / 2.0) / (editor.samplePos / 2.0);
-                        smp = ROUND_SMP_D(smp);
+                        smp_f = (*ptr8_1) * (j / 2.0f) / (editor.samplePos / 2.0f);
+                        smp_f = roundf(smp_f);
 
-                        *ptr8_1 = (int8_t)(CLAMP(smp, -128.0, 127.0));
+                        *ptr8_1 = (int8_t)(CLAMP(smp_f, -128.0f, 127.0f));
                         ptr8_1++;
                     }
 
+                    fixSampleBeep(s);
                     if (editor.ui.samplerScreenShown)
                         displaySample();
 
@@ -3864,13 +3873,14 @@ int8_t handleLeftMouseButton(void)
                     ptr8_1 = &modEntry->sampleData[s->offset + (s->length - 1)];
                     for (j = editor.samplePos; j < s->length; ++j)
                     {
-                        smp = (((*ptr8_1) * ((j - editor.samplePos))) / (double)((s->length - 1) - editor.samplePos));
-                        smp = ROUND_SMP_D(smp);
+                        smp_f = (((*ptr8_1) * ((j - editor.samplePos))) / (float)((s->length - 1) - editor.samplePos));
+                        smp_f = roundf(smp_f);
 
-                        *ptr8_1 = (int8_t)(CLAMP(smp, -128.0, 127.0));
+                        *ptr8_1 = (int8_t)(CLAMP(smp_f, -128.0f, 127.0f));
                         ptr8_1--;
                     }
 
+                    fixSampleBeep(s);
                     if (editor.ui.samplerScreenShown)
                         displaySample();
 
@@ -3952,12 +3962,13 @@ int8_t handleLeftMouseButton(void)
                         ptr8_1 = &modEntry->sampleData[modEntry->samples[editor.currSample].offset];
                         for (j = 0; j < s->length; ++j)
                         {
-                            smp = ((*ptr8_1) * editor.sampleVol) / 100.0;
-                            smp = ROUND_SMP_D(smp);
+                            smp_f = ((*ptr8_1) * editor.sampleVol) / 100.0f;
+                            smp_f = roundf(smp_f);
 
-                            *ptr8_1++ = (int8_t)(CLAMP(smp, -128.0, 127.0));
+                            *ptr8_1++ = (int8_t)(CLAMP(smp_f, -128.0f, 127.0f));
                         }
 
+                        fixSampleBeep(s);
                         if (editor.ui.samplerScreenShown)
                             displaySample();
 

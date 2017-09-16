@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <math.h> // roundf()
 #include "pt_header.h"
 #include "pt_helpers.h"
 #include "pt_textout.h"
@@ -18,10 +19,25 @@
 // rounded constant to fit in float
 #define M_PI_F 3.1415927f
 
-#define SAMPLE_AREA_Y_CENTER 138
-#define SAMPLE_AREA_HEIGHT 33
+#define SAMPLE_AREA_Y_CENTER 169
+#define SAMPLE_AREA_HEIGHT 64
 
 extern uint32_t *pixelBuffer; // pt_main.c
+
+// 8-bit arithmetic shift right by 2
+#if defined (__APPLE__) || defined (_WIN32)
+#define m68000_asr_b_2(x) ((x) >> 2)
+#else
+inline int8_t m68000_asr_b_2(int8_t x)
+{
+    if (x < 0)
+        x = 0xC0 | ((uint8_t)(x) >> 2); // 0xC0 = 2^8 - 2^(8-2)
+    else
+        x >>= 2;
+
+    return (x);
+}
+#endif
 
 typedef struct sampleMixer_t
 {
@@ -31,9 +47,13 @@ typedef struct sampleMixer_t
 
 void setLoopSprites(void);
 
-static int32_t getNumSamplesPerPixel(void)
+void fixSampleBeep(moduleSample_t *s)
 {
-    return (int32_t)((editor.sampler.samDisplay / SAMPLE_AREA_WIDTH_F) + 0.5f);
+    if ((s->length >= 2) && ((s->loopStart + s->loopLength) <= 2))
+    {
+        modEntry->sampleData[s->offset + 0] = 0;
+        modEntry->sampleData[s->offset + 1] = 0;
+    }
 }
 
 void updateSamplePos(void)
@@ -150,8 +170,8 @@ static void setDragBar(void)
     if ((editor.sampler.samLength > 0) && (editor.sampler.samDisplay != editor.sampler.samLength))
     {
         // update drag bar coordinates
-        editor.sampler.dragStart = 4 + (uint16_t)(((editor.sampler.samOffset * 311) / (double)(editor.sampler.samLength)) + 0.5);
-        editor.sampler.dragEnd   = 5 + (uint16_t)((((editor.sampler.samDisplay + editor.sampler.samOffset) * 311) / (double)(editor.sampler.samLength)) + 0.5);
+        editor.sampler.dragStart = 4 + (uint16_t)(((editor.sampler.samOffset * 311) / (float)(editor.sampler.samLength)) + 0.5f);
+        editor.sampler.dragEnd   = 5 + (uint16_t)((((editor.sampler.samDisplay + editor.sampler.samOffset) * 311) / (float)(editor.sampler.samLength)) + 0.5f);
 
         if (editor.sampler.dragStart < 4)
             editor.sampler.dragStart = 4;
@@ -183,53 +203,34 @@ static void setDragBar(void)
     }
 }
 
-int32_t smpOfsToScaledOfs(int32_t x) // used drawing the sample
+static int8_t getScaledSample(int32_t index)
 {
-    int32_t scaledOffset;
-    float offsetScale;
+    const int8_t *ptr8;
+    int8_t smp;
 
-    if (editor.sampler.samDisplay <= 0)
+    if ((editor.sampler.samLength <= 0) || (index < 0) || (index > editor.sampler.samLength))
         return (0);
 
-   offsetScale = editor.sampler.samDisplay / (float)(SAMPLE_AREA_WIDTH);
-   scaledOffset = (int32_t)(((editor.sampler.samOffset / (float)(editor.sampler.samDisplay)) * (float)(SAMPLE_AREA_WIDTH)) + 0.5f);
+    ptr8 = editor.sampler.samStart;
+    if (ptr8 == NULL)
+        return (0);
 
-   return ((int32_t)(((scaledOffset + x) * offsetScale) + 0.5f));
-}
-
-uint16_t getScaledSample(int32_t index)
-{
-    uint16_t smp;
-
-    if ((editor.sampler.samStart == NULL) || (editor.sampler.samLength <= 0))
-        return (31);
-
-    index = CLAMP(index, 0, editor.sampler.samLength - 1);
-    smp = (127 - editor.sampler.samStart[index]) / 4;
+    smp = ptr8[index];
+    smp = m68000_asr_b_2(smp);
 
     return (smp);
 }
 
 int32_t smpPos2Scr(int32_t pos) // sample pos -> screen x pos
 {
-    uint8_t roundFlag;
-    float scaledPos_f;
+    int32_t scaledPos;
 
-    roundFlag = editor.sampler.samDisplay >= SAMPLE_AREA_WIDTH;
-
-    scaledPos_f = (pos / (float)(editor.sampler.samDisplay)) * SAMPLE_AREA_WIDTH_F;
-    if (roundFlag)
-        scaledPos_f += 0.5f;
-
-    pos = (int32_t)(scaledPos_f);
+    pos = (pos * SAMPLE_AREA_WIDTH) / editor.sampler.samDisplay;
 
     if (editor.sampler.samDisplay > 0)
     {
-        scaledPos_f = (editor.sampler.samOffset / (float)(editor.sampler.samDisplay)) * SAMPLE_AREA_WIDTH_F;
-        if (roundFlag)
-            scaledPos_f += 0.5f;
-
-        pos -= (int32_t)(scaledPos_f);
+        scaledPos = (editor.sampler.samOffset * SAMPLE_AREA_WIDTH) / editor.sampler.samDisplay;
+        pos -= scaledPos;
     }
 
     return (pos);
@@ -237,33 +238,46 @@ int32_t smpPos2Scr(int32_t pos) // sample pos -> screen x pos
 
 int32_t scr2SmpPos(int32_t x) // screen x pos -> sample pos
 {
-    uint8_t roundFlag;
-    float scaledPos_f;
-
-    roundFlag = editor.sampler.samDisplay >= SAMPLE_AREA_WIDTH;
+    int32_t scaledPos;
 
     if (editor.sampler.samDisplay > 0)
     {
-        scaledPos_f = (editor.sampler.samOffset / (float)(editor.sampler.samDisplay)) * SAMPLE_AREA_WIDTH_F;
-        if (roundFlag)
-            scaledPos_f += 0.5f;
-
-        x += (int32_t)(scaledPos_f);
+        scaledPos = (editor.sampler.samOffset * SAMPLE_AREA_WIDTH) / editor.sampler.samDisplay;
+        x += scaledPos;
     }
 
-    scaledPos_f = (x / SAMPLE_AREA_WIDTH_F) * editor.sampler.samDisplay;
-    if (roundFlag)
-        scaledPos_f += 0.5f;
+    scaledPos = (x * editor.sampler.samDisplay) / SAMPLE_AREA_WIDTH;
 
-    return ((int32_t)(scaledPos_f));
+    return (scaledPos);
+}
+
+static void getSampleDataPeak(int8_t *smpPtr, int32_t numBytes, int16_t *outMin, int16_t *outMax)
+{
+    int8_t smp;
+    int16_t min, max;
+    int32_t i;
+
+    min =  127;
+    max = -128;
+
+    for (i = 0; i < numBytes; ++i)
+    {
+        smp = smpPtr[i];
+        if (smp < min) min = smp;
+        if (smp > max) max = smp;
+    }
+
+    min = m68000_asr_b_2(min);
+    max = m68000_asr_b_2(max);
+
+    *outMin = SAMPLE_AREA_Y_CENTER - min;
+    *outMax = SAMPLE_AREA_Y_CENTER - max;
 }
 
 static void renderSampleData(void)
 {
-    int8_t *smpPtr, *ptr8;
-    int16_t smp, lo, hi, prevLo, prevHi;
-    uint16_t y1, y2, y, x;
-    int32_t i, numSmpsPerPixel, smpIdx, smpLen;
+    int8_t *smpPtr;
+    int16_t y1, y2, y, x, min, max, oldMin, oldMax, numSmpsPerPixel;
     const uint32_t *ptr32Src;
     uint32_t *ptr32Dst;
     moduleSample_t *s;
@@ -284,12 +298,12 @@ static void renderSampleData(void)
 
     // display center line
     if (editor.ui.dottedCenterFlag)
-        memset(pixelBuffer + ((169 * SCREEN_W) + 3), 0x00373737, SAMPLE_AREA_WIDTH * sizeof (int32_t));
+        memset(pixelBuffer + ((SAMPLE_AREA_Y_CENTER * SCREEN_W) + 3), 0x00373737, SAMPLE_AREA_WIDTH * sizeof (int32_t));
 
     // render sample data
     if ((editor.sampler.samDisplay >= 0) && (editor.sampler.samDisplay <= MAX_SAMPLE_LEN))
     {
-        y1 = SAMPLE_AREA_Y_CENTER + getScaledSample(scr2SmpPos(0));
+        y1 = SAMPLE_AREA_Y_CENTER - getScaledSample(scr2SmpPos(0));
 
         numSmpsPerPixel = editor.sampler.samDisplay / SAMPLE_AREA_WIDTH;
         if (numSmpsPerPixel <= 1)
@@ -298,52 +312,33 @@ static void renderSampleData(void)
 
             for (x = 1; x < SAMPLE_AREA_WIDTH; ++x)
             {
-                y2 = SAMPLE_AREA_Y_CENTER + getScaledSample(scr2SmpPos(x));
+                y2 = SAMPLE_AREA_Y_CENTER - getScaledSample(scr2SmpPos(x));
                 line(pixelBuffer, 3 + (x - 1), 3 + x, y1, y2);
                 y1 = y2;
             }
         }
         else
         {
-            // zoomed out
+            // zoomed out (code borrowed from OpenMPT)
 
-            prevLo  = y1;
-            prevHi  = y1;
-            smpLen  = s->length;
-            smpPtr  = &modEntry->sampleData[s->offset];
+            oldMin = y1;
+            oldMax = y1;
 
+            smpPtr = &modEntry->sampleData[s->offset];
             for (x = 0; x < SAMPLE_AREA_WIDTH; x++)
             {
-                smpIdx = scr2SmpPos(x);
-
-                lo =  127;
-                hi = -128;
-
-                // get peak for low/high
-                ptr8 = smpPtr + smpIdx;
-                for (i = 0; i < numSmpsPerPixel; ++i)
-                {
-                    if ((smpIdx + i) >= smpLen)
-                        break;
-
-                    smp = *ptr8++;
-                    if (smp < lo) lo = smp;
-                    if (smp > hi) hi = smp;
-                }
-
-                lo = SAMPLE_AREA_Y_CENTER + ((127 - lo) / 4);
-                hi = SAMPLE_AREA_Y_CENTER + ((127 - hi) / 4);
-
-                line(pixelBuffer, 3 + x, 3 + x, hi, lo);
+                getSampleDataPeak(&smpPtr[scr2SmpPos(x)], numSmpsPerPixel, &min, &max);
 
                 if (x > 0)
                 {
-                    if (lo > prevHi) line(pixelBuffer, 2 + x, 3 + x, prevHi, lo);
-                    if (hi < prevLo) line(pixelBuffer, 2 + x, 3 + x, prevLo, hi);
+                    if (min > oldMax) line(pixelBuffer, 2 + x, 3 + x, oldMax, min);
+                    if (max < oldMin) line(pixelBuffer, 2 + x, 3 + x, oldMin, max);
                 }
 
-                prevLo = lo;
-                prevHi = hi;
+                line(pixelBuffer, 3 + x, 3 + x, max, min);
+
+                oldMin = min;
+                oldMax = max;
             }
         }
     }
@@ -557,6 +552,7 @@ void highPassSample(int32_t cutOff)
 
     free(sampleData);
 
+    fixSampleBeep(s);
     displaySample();
     updateWindowTitle(MOD_IS_MODIFIED);
 }
@@ -658,6 +654,7 @@ void lowPassSample(int32_t cutOff)
 
     free(sampleData);
 
+    fixSampleBeep(s);
     displaySample();
     updateWindowTitle(MOD_IS_MODIFIED);
 }
@@ -812,6 +809,7 @@ void samplerRemoveDcOffset(void)
     for (i = from; i < to; ++i)
         smpDat[i] = (int8_t)(CLAMP(smpDat[i] - offset, -128, 127));
 
+    fixSampleBeep(s);
     displaySample();
     updateWindowTitle(MOD_IS_MODIFIED);
 }
@@ -1041,11 +1039,12 @@ void mixChordSample(void)
     for (i = 0; i < s->length; ++i)
         modEntry->sampleData[s->offset + i] = quantizeFloatTo8bit(mixerData[i]);
 
-    // ...over and out!
+    // we're done.
 
     free(mixerData);
 
     editor.samplePos = 0;
+    fixSampleBeep(s);
     updateCurrSample();
 
     updateWindowTitle(MOD_IS_MODIFIED);
@@ -1131,7 +1130,7 @@ void samplerResample(void)
         smp2_f = oldSampleData[(readPhase + 1) % readLength];
 
         smd_f = LERP(smp1_f, smp2_f, readFrac);
-        smd_f = ROUND_SMP_F(smd_f);
+        smd_f = roundf(smd_f);
         smd_f = CLAMP(smd_f, -128.0f, 127.0f);
 
         newSampleData[writePhase++] = (int8_t)(smd_f);
@@ -1172,6 +1171,7 @@ void samplerResample(void)
         }
     }
 
+    fixSampleBeep(s);
     updateCurrSample();
     updateWindowTitle(MOD_IS_MODIFIED);
 }
@@ -1182,7 +1182,7 @@ void doMix(void)
     uint8_t smpFrom1, smpFrom2, smpTo;
     int16_t tmpSmp;
     int32_t i, mixLength;
-    double smp;
+    float smp_f;
     moduleSample_t *s1, *s2, *s3;
 
     smpFrom1 = hexToInteger2(&editor.mixText[4]);
@@ -1239,10 +1239,8 @@ void doMix(void)
 
             if (editor.halfClipFlag == 0)
             {
-                smp = tmpSmp / 2.0;
-                smp = ROUND_SMP_D(smp);
-
-                mixPtr[i] = (int8_t)(CLAMP(smp, -128.0, 127.0));
+                smp_f = roundf(tmpSmp / 2.0f);
+                mixPtr[i] = (int8_t)(CLAMP(smp_f, -128.0f, 127.0f));
             }
             else
             {
@@ -1265,6 +1263,8 @@ void doMix(void)
     editor.currSample = smpTo;
 
     editor.samplePos = 0;
+
+    fixSampleBeep(s3);
     updateCurrSample();
     updateWindowTitle(MOD_IS_MODIFIED);
 }
@@ -1275,7 +1275,7 @@ void boostSample(int8_t sample, int8_t ignoreMark)
     int8_t *smpDat;
     int16_t tmp16_1, tmp16_2, tmp16_3;
     int32_t i, from, to;
-    double smp;
+    float smp_f;
     moduleSample_t *s;
 
     PT_ASSERT((sample >= 0) && (sample <= 30));
@@ -1312,12 +1312,13 @@ void boostSample(int8_t sample, int8_t ignoreMark)
         tmp16_1 -= tmp16_3;
         tmp16_3  = tmp16_2;
 
-        smp = tmp16_1 / 4.0;
-        smp = ROUND_SMP_D(smp);
-        tmp16_2 += (int16_t)(CLAMP(smp, -128.0, 127.0));
+        smp_f    = roundf(tmp16_1 / 4.0f);
+        tmp16_2 += (int16_t)(CLAMP(smp_f, -128.0f, 127.0f));
 
         smpDat[i] = (int8_t)(CLAMP(tmp16_2, -128, 127));
     }
+
+    fixSampleBeep(s);
 
     // don't redraw sample here, it is done elsewhere
 }
@@ -1327,7 +1328,7 @@ void filterSample(int8_t sample, int8_t ignoreMark)
 {
     int8_t *smpDat;
     int32_t i, from, to;
-    double smp_d;
+    float smp_f;
     moduleSample_t *s;
 
     PT_ASSERT((sample >= 0) && (sample <= 30));
@@ -1358,15 +1359,17 @@ void filterSample(int8_t sample, int8_t ignoreMark)
     if (to < 1)
         return;
 
-    for (i = from; i < (to - 1); ++i)
+    to--;
+    for (i = from; i < to; ++i)
     {
-        smp_d = (smpDat[i] + smpDat[i + 1]) / 2.0;
-        smp_d = ROUND_SMP_D(smp_d);
-        smp_d = CLAMP(smp_d, -128.0, 127.0);
+        smp_f = (smpDat[i + 0] + smpDat[i + 1]) / 2.0f;
+        smp_f = roundf(smp_f);
+        smp_f = CLAMP(smp_f, -128.0f, 127.0f);
 
-        smpDat[i] = (int8_t)(smp_d);
+        smpDat[i] = (int8_t)(smp_f);
     }
 
+    fixSampleBeep(s);
     // don't redraw sample here, it is done elsewhere
 }
 
@@ -1460,7 +1463,7 @@ void sampleMarkerToEnd(void)
     }
     else
     {
-        editor.markStartOfs = endPos - getNumSamplesPerPixel();
+        editor.markStartOfs = endPos - (editor.sampler.samDisplay / SAMPLE_AREA_WIDTH);
         editor.markEndOfs   = editor.markStartOfs;
     }
 
@@ -1688,6 +1691,7 @@ void samplerSamDelete(uint8_t cut)
     invertRange();
 
     editor.samplePos = editor.markStartOfs;
+    fixSampleBeep(s);
     updateSamplePos();
     recalcChordLength();
     displaySample();
@@ -1817,6 +1821,7 @@ void samplerSamPaste(void)
     invertRange();
 
     editor.samplePos = editor.markEndOfs;
+    fixSampleBeep(s);
     updateSamplePos();
     recalcChordLength();
 
@@ -2266,7 +2271,7 @@ void samplerBarPressed(int8_t mouseButtonHeld)
     }
 }
 
-int32_t x_to_loopX(int32_t mouseX)
+static int32_t x2LoopX(int32_t mouseX)
 {
     int32_t offset;
     moduleSample_t *s;
@@ -2277,8 +2282,19 @@ int32_t x_to_loopX(int32_t mouseX)
     if (mouseX < 0)
         mouseX = 0;
 
-    offset = editor.sampler.samOffset + (int32_t)((((mouseX * editor.sampler.samDisplay) / (float)(SAMPLE_AREA_WIDTH))) + 0.5f);
+    offset = scr2SmpPos(mouseX);
     return (CLAMP(offset, 0, s->length));
+}
+
+static int32_t xToSmpX(int32_t x, int32_t smpLen)
+{
+    x = scr2SmpPos(x);
+    return (CLAMP(x, 0, smpLen - 1));
+}
+
+static int8_t yToSmpY(int32_t mouseY)
+{
+    return (CLAMP(SAMPLE_AREA_Y_CENTER - mouseY, -32, 31) * 4);
 }
 
 void samplerEditSample(int8_t mouseButtonHeld)
@@ -2286,8 +2302,7 @@ void samplerEditSample(int8_t mouseButtonHeld)
     // EDIT SAMPLE ROUTINE (non-PT feature inspired by FT2)
 
     int8_t y;
-    int32_t x, smp_x0, smp_x1, xDistance, smp_y0, smp_y1, yDistance;
-    float s_f;
+    int32_t mouseY, x, smp_x0, smp_x1, xDistance, smp_y0, smp_y1, yDistance, smp;
     moduleSample_t *s;
 
     PT_ASSERT((editor.currSample >= 0) && (editor.currSample <= 30));
@@ -2320,25 +2335,17 @@ void samplerEditSample(int8_t mouseButtonHeld)
         return;
     }
 
-    x = scr2SmpPos(input.mouse.x - 3);
-    x = CLAMP(x, 0, s->length);
+    mouseY = input.keyb.shiftKeyDown ? editor.sampler.lastMouseY : input.mouse.y;
 
-    if (!input.keyb.shiftKeyDown)
-        y = (int8_t)(CLAMP(-(input.mouse.y - 169) * 4, -128, 127));
-    else
-        y = (int8_t)(CLAMP(-(editor.sampler.lastMouseY - 169) * 4, -128, 127));
-
-    if (y >= 124) // kludge
-        y  = 127;
+    x = xToSmpX(input.mouse.x - 3, s->length);
+    y = yToSmpY(mouseY);
 
     modEntry->sampleData[s->offset + x] = y;
 
     // interpolate x gaps
     if (input.mouse.x != editor.sampler.lastMouseX)
     {
-        smp_y0 = CLAMP(-(editor.sampler.lastMouseY - 169) * 4, -128, 127);
-        if (smp_y0 >= 124) // kludge
-            smp_y0  = 127;
+        smp_y0 = yToSmpY(editor.sampler.lastMouseY);
 
         smp_y1 = y;
         yDistance = smp_y1 - smp_y0;
@@ -2346,8 +2353,7 @@ void samplerEditSample(int8_t mouseButtonHeld)
         if (input.mouse.x > editor.sampler.lastMouseX)
         {
             smp_x1 = x;
-            smp_x0 = scr2SmpPos(editor.sampler.lastMouseX - 3);
-            smp_x0 = CLAMP(smp_x0, 0, s->length);
+            smp_x0 = xToSmpX(editor.sampler.lastMouseX - 3, s->length);
 
             xDistance = smp_x1 - smp_x0;
             if (xDistance > 0)
@@ -2356,16 +2362,15 @@ void samplerEditSample(int8_t mouseButtonHeld)
                 {
                     PT_ASSERT(x < s->length);
 
-                    s_f = smp_y0 + ((x - smp_x0) / (float)(xDistance)) * (float)(yDistance);
-                    modEntry->sampleData[s->offset + x] = (int8_t)(s_f + 0.5f);
+                    smp = smp_y0 + (((x - smp_x0) * yDistance) / xDistance);
+                    modEntry->sampleData[s->offset + x] = (int8_t)(CLAMP(smp, -128, 127));
                 }
             }
         }
         else if (input.mouse.x < editor.sampler.lastMouseX)
         {
             smp_x0 = x;
-            smp_x1 = scr2SmpPos(editor.sampler.lastMouseX - 3);
-            smp_x1 = CLAMP(smp_x1, 0, s->length);
+            smp_x1 = xToSmpX(editor.sampler.lastMouseX - 3, s->length);
 
             xDistance = smp_x1 - smp_x0;
             if (xDistance > 0)
@@ -2374,8 +2379,8 @@ void samplerEditSample(int8_t mouseButtonHeld)
                 {
                     PT_ASSERT(x < s->length);
 
-                    s_f = smp_y0 + ((smp_x1 - x) / (float)(xDistance)) * (float)(yDistance);
-                    modEntry->sampleData[s->offset + x] = (int8_t)(s_f + 0.5f);
+                    smp = smp_y0 + (((smp_x1 - x) * yDistance) / xDistance);
+                    modEntry->sampleData[s->offset + x] = (int8_t)(CLAMP(smp, -128, 127));
                 }
             }
         }
@@ -2440,7 +2445,7 @@ void samplerSamplePressed(int8_t mouseButtonHeld)
 
             mouseX += 2;
 
-            tmpPos = (x_to_loopX(mouseX) - s->loopStart) & 0xFFFFFFFE;
+            tmpPos = (x2LoopX(mouseX) - s->loopStart) & 0xFFFFFFFE;
             if ((s->loopStart + tmpPos) >= ((s->loopStart + s->loopLength) - 2))
             {
                 s->loopStart  = (s->loopStart + s->loopLength) - 2;
@@ -2477,7 +2482,7 @@ void samplerSamplePressed(int8_t mouseButtonHeld)
             if (--mouseX < 0)
                   mouseX = 0;
 
-            s->loopLength = (x_to_loopX(mouseX) - s->loopStart) & 0xFFFFFFFE;
+            s->loopLength = (x2LoopX(mouseX) - s->loopStart) & 0xFFFFFFFE;
             if (s->loopLength < 2)
                 s->loopLength = 2;
 
@@ -2508,7 +2513,6 @@ void samplerSamplePressed(int8_t mouseButtonHeld)
         }
         else
         {
-            
             editor.markStartOfs = scr2SmpPos(editor.ui.sampleMarkingPos - 3);
             editor.markEndOfs   = scr2SmpPos(editor.ui.sampleMarkingPos - 3);
 

@@ -6,6 +6,7 @@
 int32_t smpPos2Scr(int32_t pos); // sample pos   -> screen x pos
 int32_t scr2SmpPos(int32_t x);   // screen x pos -> sample pos
 
+void fixSampleBeep(moduleSample_t *s);
 void highPassSample(int32_t cutOff);
 void lowPassSample(int32_t cutOff);
 void samplerRemoveDcOffset(void);
