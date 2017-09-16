@@ -42,6 +42,7 @@ void turnOffVoices(void);
 void mixerCalcVoicePans(uint8_t stereoSeparation);
 void mixerSetSamplesPerTick(int32_t val);
 void mixerClearSampleCounter(void);
+void handleExternalVoiceUpdates(void);
 void outputAudio(int16_t *target, int32_t numSamples);
 
 #endif

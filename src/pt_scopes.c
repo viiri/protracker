@@ -35,43 +35,80 @@ void updateScopes(void)
     for (i = 0; i < AMIGA_VOICES; i++)
     {
         sc = &scope[i];
-        if (sc->retriggered)
-        {
-            sc->retriggered = false;
 
-            // we just (re)triggered the scopes, reset integer phase and set new phase for next cycle
-            sc->phase   = 0;
-            sc->phase_f = sc->delta_f; // phase_f = 0.0f; phase_f += sc->delta_f;
+        // update internal variables from other threads if needed
+
+        if (sc->updatePhase)
+        {
+            sc->updatePhase = false;
+            sc->_phase_f    = sc->phase;
         }
-        else if (sc->active)
-        {
-            // slow, but can't use modulus since I need to make a swap event after every full sample cycle.
-            // max iterations: ~261 = ((paula_clock / vblank_hz) / lowest_period) / smallest_loop_length
-            while (sc->phase_f >= sc->length)
-            {
-                sc->phase_f -= sc->length;
 
-                sc->length   = sc->newLength;
-                sc->data     = sc->newData;
-                sc->loopFlag = sc->newLoopFlag; // used for scope display wrapping
+        if (sc->updateData)
+        {
+            sc->updateData = false;
+            sc->_data      = sc->data;
+            sc->_newData   = sc->newData;
+        }
+
+        if (sc->updateLength)
+        {
+            sc->updateLength = false;
+            sc->_length      = sc->length;
+            sc->_newLength   = sc->newLength;
+        }
+
+        if (sc->updateLoopFlag)
+        {
+            sc->updateLoopFlag = false;
+            sc->_loopFlag      = sc->loopFlag;
+            sc->_newLoopFlag   = sc->newLoopFlag;
+        }
+
+        if (sc->updateActive)
+        {
+            sc->updateActive = false;
+            sc->_active = sc->active;
+        }
+
+        if (sc->_active)
+        {
+            if (sc->_length > 0) // security check
+            {
+                // slow, but can't use modulus since I need to make a swap event after every full sample cycle.
+                // max iterations: ~261 = ((paula_clock / vblank_hz) / lowest_period) / smallest_loop_length
+                while (sc->_phase_f >= sc->_length)
+                {
+                    sc->_phase_f -= sc->_length;
+
+                    sc->_length   = sc->_newLength;
+                    sc->_data     = sc->_newData;
+                    sc->_loopFlag = sc->_newLoopFlag; // used for scope display wrapping
+                }
             }
 
-            sc->phase    = (int32_t)(sc->phase_f); // truncate
-            sc->phase_f += sc->delta_f;
-        }
+            // set variables for external visuals
+            sc->data     = sc->_data;
+            sc->length   = sc->_length;
+            sc->loopFlag = sc->_loopFlag;
+            sc->phase    = (int32_t)(sc->_phase_f);
 
-        // update sample read position sprite (TODO: could use less extensive 'if' logic)
-        if (editor.ui.samplerScreenShown && !editor.muted[i] && (modEntry->channels[i].n_samplenum == editor.currSample) && !editor.ui.terminalShown)
-        {
-            if (sc->active && (sc->phase >= 2) && !editor.ui.samplerVolBoxShown && !editor.ui.samplerFiltersBoxShown)
+            // increase sample read position
+            sc->_phase_f += sc->delta_f;
+
+            // update sample read position sprite (TODO: could use less extensive 'if' logic)
+            if (editor.ui.samplerScreenShown && !editor.muted[i] && (modEntry->channels[i].n_samplenum == editor.currSample) && !editor.ui.terminalShown)
             {
-                // get real sampling position regardless of where the scope data points to
-                samplePlayPos = (int32_t)(&sc->data[sc->phase] - &modEntry->sampleData[s->offset]);
-                if ((samplePlayPos >= 0) && (samplePlayPos < s->length))
+                if ((sc->phase >= 2) && !editor.ui.samplerVolBoxShown && !editor.ui.samplerFiltersBoxShown)
                 {
-                    samplePlayPos = 3 + smpPos2Scr(samplePlayPos);
-                    if ((samplePlayPos >= 3) && (samplePlayPos <= 316))
-                        setSpritePos(SPRITE_SAMPLING_POS_LINE, samplePlayPos, 138);
+                    // get real sampling position regardless of where the scope data points to
+                    samplePlayPos = (int32_t)(&sc->data[sc->phase] - &modEntry->sampleData[s->offset]);
+                    if ((samplePlayPos >= 0) && (samplePlayPos < s->length))
+                    {
+                        samplePlayPos = 3 + smpPos2Scr(samplePlayPos);
+                        if ((samplePlayPos >= 3) && (samplePlayPos <= 316))
+                            setSpritePos(SPRITE_SAMPLING_POS_LINE, samplePlayPos, 138);
+                    }
                 }
             }
         }
