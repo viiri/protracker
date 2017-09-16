@@ -35,80 +35,46 @@ void updateScopes(void)
     for (i = 0; i < AMIGA_VOICES; i++)
     {
         sc = &scope[i];
-
-        // update internal variables from other threads if needed
-
-        if (sc->updatePhase)
+        if (sc->retriggered)
         {
-            sc->updatePhase = false;
-            sc->_phase_f    = sc->phase;
+            sc->retriggered = false;
+
+            // we just (re)triggered the scopes, reset integer phase and set new phase for next cycle
+            sc->phase   = 0;
+            sc->phase_f = sc->delta_f; // phase_f = 0.0f; phase_f += sc->delta_f;
         }
-
-        if (sc->updateData)
+        else if (sc->active)
         {
-            sc->updateData = false;
-            sc->_data      = sc->data;
-            sc->_newData   = sc->newData;
-        }
-
-        if (sc->updateLength)
-        {
-            sc->updateLength = false;
-            sc->_length      = sc->length;
-            sc->_newLength   = sc->newLength;
-        }
-
-        if (sc->updateLoopFlag)
-        {
-            sc->updateLoopFlag = false;
-            sc->_loopFlag      = sc->loopFlag;
-            sc->_newLoopFlag   = sc->newLoopFlag;
-        }
-
-        if (sc->updateActive)
-        {
-            sc->updateActive = false;
-            sc->_active = sc->active;
-        }
-
-        if (sc->_active)
-        {
-            if (sc->_length > 0) // security check
+            // slow, but can't use modulus since I need to make a swap event after every full sample cycle.
+            // max iterations: ~261 = ((paula_clock / vblank_hz) / lowest_period) / smallest_loop_length
+            if (sc->length > 0)
             {
-                // slow, but can't use modulus since I need to make a swap event after every full sample cycle.
-                // max iterations: ~261 = ((paula_clock / vblank_hz) / lowest_period) / smallest_loop_length
-                while (sc->_phase_f >= sc->_length)
+                while (sc->phase_f >= sc->length)
                 {
-                    sc->_phase_f -= sc->_length;
+                    sc->phase_f -= sc->length;
 
-                    sc->_length   = sc->_newLength;
-                    sc->_data     = sc->_newData;
-                    sc->_loopFlag = sc->_newLoopFlag; // used for scope display wrapping
+                    sc->length   = sc->newLength;
+                    sc->data     = sc->newData;
+                    sc->loopFlag = sc->newLoopFlag; // used for scope display wrapping
                 }
             }
 
-            // set variables for external visuals
-            sc->data     = sc->_data;
-            sc->length   = sc->_length;
-            sc->loopFlag = sc->_loopFlag;
-            sc->phase    = (int32_t)(sc->_phase_f);
+            sc->phase    = (int32_t)(sc->phase_f); // truncate
+            sc->phase_f += sc->delta_f;
+        }
 
-            // increase sample read position
-            sc->_phase_f += sc->delta_f;
-
-            // update sample read position sprite (TODO: could use less extensive 'if' logic)
-            if (editor.ui.samplerScreenShown && !editor.muted[i] && (modEntry->channels[i].n_samplenum == editor.currSample) && !editor.ui.terminalShown)
+        // update sample read position sprite (TODO: could use less extensive 'if' logic)
+        if (editor.ui.samplerScreenShown && !editor.muted[i] && (modEntry->channels[i].n_samplenum == editor.currSample) && !editor.ui.terminalShown)
+        {
+            if (sc->active && (sc->phase >= 2) && !editor.ui.samplerVolBoxShown && !editor.ui.samplerFiltersBoxShown)
             {
-                if ((sc->phase >= 2) && !editor.ui.samplerVolBoxShown && !editor.ui.samplerFiltersBoxShown)
+                // get real sampling position regardless of where the scope data points to
+                samplePlayPos = (int32_t)(&sc->data[sc->phase] - &modEntry->sampleData[s->offset]);
+                if ((samplePlayPos >= 0) && (samplePlayPos < s->length))
                 {
-                    // get real sampling position regardless of where the scope data points to
-                    samplePlayPos = (int32_t)(&sc->data[sc->phase] - &modEntry->sampleData[s->offset]);
-                    if ((samplePlayPos >= 0) && (samplePlayPos < s->length))
-                    {
-                        samplePlayPos = 3 + smpPos2Scr(samplePlayPos);
-                        if ((samplePlayPos >= 3) && (samplePlayPos <= 316))
-                            setSpritePos(SPRITE_SAMPLING_POS_LINE, samplePlayPos, 138);
-                    }
+                    samplePlayPos = 3 + smpPos2Scr(samplePlayPos);
+                    if ((samplePlayPos >= 3) && (samplePlayPos <= 316))
+                        setSpritePos(SPRITE_SAMPLING_POS_LINE, samplePlayPos, 138);
                 }
             }
         }
@@ -266,7 +232,7 @@ static void syncScopeThread(void)
     timeNow_64bit = SDL_GetPerformanceCounter();
     if (nextTime_64bit > timeNow_64bit)
     {
-        delayMs_f = ((nextTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f)) + 0.5;
+        delayMs_f = ((double)(nextTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f)) + 0.5;
 
         delayMs = (int32_t)(delayMs_f);
         if (delayMs > 0)
@@ -274,7 +240,7 @@ static void syncScopeThread(void)
     }
 
     frameLength_f   = (perfFreq_f / VBLANK_HZ) + 0.5;
-    nextTime_64bit += (uint64_t)(frameLength_f);
+    nextTime_64bit += (int32_t)(frameLength_f);
 }
 
 int32_t scopeThreadFunc(void *ptr)
@@ -296,7 +262,7 @@ uint8_t initScopes(void)
     double frameLength_f;
 
     frameLength_f  = ((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5;
-    nextTime_64bit = SDL_GetPerformanceCounter() + (uint64_t)(frameLength_f);
+    nextTime_64bit = SDL_GetPerformanceCounter() + (int32_t)(frameLength_f);
 
     scopeThread = SDL_CreateThread(scopeThreadFunc, "PT Clone Scope Thread", NULL);
     if (scopeThread == NULL)

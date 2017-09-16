@@ -1815,7 +1815,7 @@ void handleAskYes(void)
     uint32_t i;
     float tmpFloat;
     moduleSample_t *s;
-    
+
     switch (editor.ui.askScreenType)
     {
         case ASK_RESTORE_SAMPLE:
@@ -1877,8 +1877,6 @@ void handleAskYes(void)
             {
                 if (intMusic() == false)
                     editor.smpRenderingDone = true;
-
-                handleExternalVoiceUpdates();
 
                 outputAudio(NULL, samplesPerTick);
             }
@@ -2939,7 +2937,7 @@ int8_t setupVideo(void)
     screenW = SCREEN_W * editor.ui.videoScaleFactor;
     screenH = SCREEN_H * editor.ui.videoScaleFactor;
 
-    windowFlags   = SDL_WINDOW_HIDDEN;
+    windowFlags   = 0;
     rendererFlags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE;
     textureFormat = SDL_PIXELFORMAT_RGB888;
 
@@ -2984,7 +2982,7 @@ int8_t setupVideo(void)
 
     window = SDL_CreateWindow("ProTracker v2.3D", SDL_WINDOWPOS_CENTERED,
                               SDL_WINDOWPOS_CENTERED, screenW, screenH,
-                              windowFlags);
+                              windowFlags | SDL_WINDOW_HIDDEN);
     if (window == NULL)
     {
         showErrorMsgBox("Couldn't create SDL window:\n%s", SDL_GetError());
