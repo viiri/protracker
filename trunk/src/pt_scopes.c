@@ -14,10 +14,25 @@ const int16_t mixScaleTable[AMIGA_VOICES] = { 388, 570, 595, 585 };
 
 scopeChannel_t scope[4];
 static SDL_Thread *scopeThread;
-static uint64_t nextTime_64bit;
+static uint64_t timeNext64;
 
 extern int8_t forceMixerOff;  // pt_audio.c
 extern uint32_t *pixelBuffer; // pt_main.c
+
+// 16-bit arithmetic shift right by 9
+#if defined (__APPLE__) || defined (_WIN32)
+#define m68000_asr_w_9(x) ((x) >> 9)
+#else
+inline int16_t m68000_asr_w_9(int16_t x)
+{
+    if (x < 0)
+        x = 0xFF80 | ((uint16_t)(x) >> 9); // 0xFF80 = 2^16 - 2^(16-9)
+    else
+        x >>= 9;
+
+    return (x);
+}
+#endif
 
 void updateScopes(void)
 {
@@ -133,7 +148,9 @@ void drawScopes(void)
                 {
                     for (x = 0; x < SCOPE_WIDTH; ++x)
                     {
-                        scopeData = (readPtr[readPos++ % dataLen] * volume) >> 9;
+                        scopeData = readPtr[readPos++ % dataLen] * volume;
+                        scopeData = m68000_asr_w_9(scopeData);
+
                         scopePtr[(scopeData * SCREEN_W) + x] = scopePixel;
                     }
                 }
@@ -143,7 +160,10 @@ void drawScopes(void)
                     {
                         scopeData = 0;
                         if (readPos < dataLen)
-                            scopeData = (readPtr[readPos++] * volume) >> 9;
+                        {
+                            scopeData = readPtr[readPos++ % dataLen] * volume;
+                            scopeData = m68000_asr_w_9(scopeData);
+                        }
 
                         scopePtr[(scopeData * SCREEN_W) + x] = scopePixel;
                     }
@@ -219,28 +239,39 @@ void drawScopes(void)
     }
 }
 
+static void initSyncMainThread(void)
+{
+    double perfFreq_f, frameLength_f;
+
+    perfFreq_f    = (double)(SDL_GetPerformanceFrequency());
+    frameLength_f = (perfFreq_f / VBLANK_HZ) + 0.5;
+    timeNext64    = SDL_GetPerformanceCounter() + (int32_t)(frameLength_f);
+}
+
 static void syncScopeThread(void)
 {
     int32_t delayMs;
-    uint64_t timeNow_64bit;
+    uint64_t timeNow64, timeElapsed64;
     double delayMs_f, perfFreq_f, frameLength_f;
 
     perfFreq_f = (double)(SDL_GetPerformanceFrequency()); // should be safe for double
     if (perfFreq_f <= 0.0)
         return; // panic!
 
-    timeNow_64bit = SDL_GetPerformanceCounter();
-    if (nextTime_64bit > timeNow_64bit)
+    timeNow64 = SDL_GetPerformanceCounter();
+    if (timeNext64 > timeNow64)
     {
-        delayMs_f = ((double)(nextTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f)) + 0.5;
+        timeElapsed64 = timeNext64 - timeNow64;
 
-        delayMs = (int32_t)(delayMs_f);
+        delayMs_f = ((1000.0 * (double)(timeElapsed64)) / perfFreq_f) + 0.5;
+        delayMs   = (int32_t)(delayMs_f);
+
         if (delayMs > 0)
             SDL_Delay(delayMs);
     }
 
-    frameLength_f   = (perfFreq_f / VBLANK_HZ) + 0.5;
-    nextTime_64bit += (int32_t)(frameLength_f);
+    frameLength_f = (perfFreq_f / VBLANK_HZ) + 0.5;
+    timeNext64   += (int32_t)(frameLength_f);
 }
 
 int32_t scopeThreadFunc(void *ptr)
@@ -259,10 +290,7 @@ int32_t scopeThreadFunc(void *ptr)
 
 uint8_t initScopes(void)
 {
-    double frameLength_f;
-
-    frameLength_f  = ((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5;
-    nextTime_64bit = SDL_GetPerformanceCounter() + (int32_t)(frameLength_f);
+    initSyncMainThread();
 
     scopeThread = SDL_CreateThread(scopeThreadFunc, "PT Clone Scope Thread", NULL);
     if (scopeThread == NULL)

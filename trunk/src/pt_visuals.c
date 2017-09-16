@@ -1891,36 +1891,38 @@ void handleAskYes(void)
             // normalize 16-bit buffer
             normalize16bitSigned(editor.pat2SmpBuf, MIN(editor.pat2SmpPos, MAX_SAMPLE_LEN));
 
+            s = &modEntry->samples[editor.currSample];
+
             // clear all of the old sample
-            memset(&modEntry->sampleData[modEntry->samples[editor.currSample].offset], 0, MAX_SAMPLE_LEN);
+            memset(&modEntry->sampleData[s->offset], 0, MAX_SAMPLE_LEN);
 
             // quantize to 8-bit
             for (i = 0; i < editor.pat2SmpPos; ++i)
-                modEntry->sampleData[modEntry->samples[editor.currSample].offset + i] = quantize16bitTo8bit(editor.pat2SmpBuf[i]);
+                modEntry->sampleData[s->offset + i] = quantize16bitTo8bit(editor.pat2SmpBuf[i]);
 
             // free temp mixing buffer
             free(editor.pat2SmpBuf);
 
             // zero out sample text
-            memset(modEntry->samples[editor.currSample].text, 0, sizeof (modEntry->samples[editor.currSample].text));
+            memset(s->text, 0, sizeof (s->text));
 
             // set new sample text
             if (editor.pat2SmpHQ)
             {
-                strcpy(modEntry->samples[editor.currSample].text, "pat2smp (a-3 tune:+5)");
-                modEntry->samples[editor.currSample].fineTune = 5;
+                strcpy(s->text, "pat2smp (a-3 tune:+5)");
+                s->fineTune = 5;
             }
             else
             {
-                strcpy(modEntry->samples[editor.currSample].text, "pat2smp (f-3 tune:+1)");
-                modEntry->samples[editor.currSample].fineTune = 1;
+                strcpy(s->text, "pat2smp (f-3 tune:+1)");
+                s->fineTune = 1;
             }
 
             // new sample attributes
-            modEntry->samples[editor.currSample].length     = editor.pat2SmpPos;
-            modEntry->samples[editor.currSample].volume     = 64;
-            modEntry->samples[editor.currSample].loopStart  = 0;
-            modEntry->samples[editor.currSample].loopLength = 2;
+            s->length     = editor.pat2SmpPos;
+            s->volume     = 64;
+            s->loopStart  = 0;
+            s->loopLength = 2;
 
             pointerSetMode(POINTER_MODE_IDLE, DO_CARRY);
 
@@ -1929,6 +1931,7 @@ void handleAskYes(void)
             terminalPrintf("Pattern rendered from row %d to sample slot %02X\n", oldRow, editor.currSample + 1);
 
             editor.samplePos = 0;
+            fixSampleBeep(s);
             updateCurrSample();
         }
         break;
@@ -2042,6 +2045,13 @@ void handleAskYes(void)
 
             free(tmpSmpBuffer);
 
+            if ((s->loopStart + s->loopLength) < 2)
+            {
+                /* fix beep! */
+                modEntry->sampleData[s->offset + 0] = 0;
+                modEntry->sampleData[s->offset + 1] = 0;
+            }
+
             s->length     = newLength;
             s->loopStart  = (s->loopStart  / 2) & 0xFFFFFFFE;
             s->loopLength = (s->loopLength / 2) & 0xFFFFFFFE;
@@ -2052,6 +2062,7 @@ void handleAskYes(void)
                 s->loopLength = 2;
             }
 
+            fixSampleBeep(s);
             updateCurrSample();
 
             editor.ui.updateSongSize = true;
@@ -2108,6 +2119,7 @@ void handleAskYes(void)
                 }
             }
 
+            fixSampleBeep(s);
             updateCurrSample();
 
             editor.ui.updateSongSize = true;

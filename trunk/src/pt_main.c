@@ -61,7 +61,7 @@ static LONG WINAPI exceptionHandler(EXCEPTION_POINTERS *ptr);
 static uint8_t backupMadeAfterCrash;
 #endif
 
-static uint64_t nextTime_64bit;
+static uint64_t timeNext64;
 static SDL_TimerID timer50Hz;
 static module_t *tempMod;
 
@@ -74,6 +74,7 @@ static void loadModFromArg(char *arg);
 static void handleSigTerm(void);
 static void loadDroppedFile(char *fullPath, uint32_t fullPathLen, uint8_t autoPlay);
 static void cleanUp(void);
+static void initSyncMainThread(void);
 static void syncMainThread(void);
 static void readMouseXY(void);
 
@@ -278,10 +279,9 @@ int main(int argc, char *argv[])
     fillToVuMetersBgBuffer();
     updateCursorPos();
 
-    // setup timer stuff
-    nextTime_64bit = SDL_GetPerformanceCounter() + (int32_t)(((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5);
-
     SDL_ShowWindow(window);
+
+    initSyncMainThread();
     while (editor.programRunning)
     {
         syncMainThread();
@@ -970,30 +970,41 @@ static void cleanUp(void) // never call this inside the main loop!
 #endif
 }
 
+static void initSyncMainThread(void)
+{
+    double perfFreq_f, frameLength_f;
+
+    perfFreq_f    = (double)(SDL_GetPerformanceFrequency());
+    frameLength_f = (perfFreq_f / VBLANK_HZ) + 0.5;
+    timeNext64    = SDL_GetPerformanceCounter() + (int32_t)(frameLength_f);
+}
+
 static void syncMainThread(void)
 {
     // this routine almost never delays if we have 60Hz vsync, but it's still needed for safety
 
     int32_t delayMs;
-    uint64_t timeNow_64bit;
+    uint64_t timeNow64, timeElapsed64;
     double delayMs_f, perfFreq_f, frameLength_f;
 
     perfFreq_f = (double)(SDL_GetPerformanceFrequency()); // should be safe for double
     if (perfFreq_f <= 0.0)
         return; // panic!
 
-    timeNow_64bit = SDL_GetPerformanceCounter();
-    if (nextTime_64bit > timeNow_64bit)
+    timeNow64 = SDL_GetPerformanceCounter();
+    if (timeNext64 > timeNow64)
     {
-        delayMs_f = ((double)(nextTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f)) + 0.5;
+        timeElapsed64 = timeNext64 - timeNow64;
 
-        delayMs = (int32_t)(delayMs_f);
+        delayMs_f = ((1000.0 * (double)(timeElapsed64)) / perfFreq_f) + 0.5;
+        delayMs   = (int32_t)(delayMs_f);
+
         if (delayMs > 0)
             SDL_Delay(delayMs);
     }
 
-    frameLength_f   = (perfFreq_f / VBLANK_HZ) + 0.5;
-    nextTime_64bit += (int32_t)(frameLength_f);
+    frameLength_f = (perfFreq_f / VBLANK_HZ) + 0.5;
+    timeNext64   += (int32_t)(frameLength_f);
 }
 
 static void readMouseXY(void)

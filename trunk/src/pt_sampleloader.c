@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <math.h>
+#include <math.h> // round()/roundf()
 #include <ctype.h> // tolower()/toupper()
 #ifdef _WIN32
 #include <io.h>
@@ -34,6 +34,36 @@ static int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDown
 static int8_t loadIFFSample(UNICHAR *fileName, char *entryName);
 static int8_t loadRAWSample(UNICHAR *fileName, char *entryName);
 
+// 16-bit arithmetic shift right by 1
+#if defined (__APPLE__) || defined (_WIN32)
+#define m68000_asr_w_1(x) ((x) >> 1)
+#else
+inline int16_t m68000_asr_w_1(int16_t x)
+{
+    if (x < 0)
+        x = 0x8000 | ((uint16_t)(x) >> 1); // 0x8000 = 2^16 - 2^(16-1)
+    else
+        x >>= 1;
+
+    return (x);
+}
+#endif
+
+// 32-bit arithmetic shift right by 1
+#if defined (__APPLE__) || defined (_WIN32)
+#define m68000_asr_l_1(x) ((x) >> 1)
+#else
+inline int32_t m68000_asr_l_1(int32_t x)
+{
+    if (x < 0)
+        x = 0x80000000 | ((uint32_t)(x) >> 1);  // 0x80000000 = 2^32 - 2^(32-1)
+    else
+        x >>= 1;
+
+    return (x);
+}
+#endif
+
 void extLoadWAVSampleCallback(int8_t downsample)
 {
     loadWAVSample(editor.fileNameTmp, editor.entryNameTmp, downsample);
@@ -50,15 +80,14 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
     */
 
     uint8_t *audioDataU8, wavSampleNameFound;
-    int16_t *audioDataS16, tempVol;
+    int16_t *audioDataS16, tempVol, smp16;
     uint16_t audioFormat, numChannels, bitsPerSample;
-    int32_t *audioDataS32;
+    int32_t *audioDataS32, smp32, smp32_l, smp32_r;
     uint32_t *audioDataU32, i, nameLen, chunkID, chunkSize;
     uint32_t sampleLength, sampleRate, filesize, loopFlags;
     uint32_t loopStart, loopEnd, dataPtr, dataLen, fmtPtr, endOfChunk, bytesRead;
     uint32_t fmtLen, inamPtr, inamLen, smplPtr, smplLen, xtraPtr, xtraLen;
     float *audioDataFloat, smp_f;
-    double smp_d;
     FILE *f;
     moduleSample_t *s;
 
@@ -313,11 +342,10 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
             // add right channel to left channel
             for (i = 0; i < (sampleLength - 1); i++)
             {
-                smp_d = (audioDataU8[(i * 2) + 0] + audioDataU8[(i * 2) + 1]) / 2.0;
-                smp_d = ROUND_SMP_D(smp_d);
-                smp_d = CLAMP(smp_d, 0.0, 255.0);
+                smp16 = (audioDataU8[(i * 2) + 0] - 128) + (audioDataU8[(i * 2) + 1] - 128);
+                smp16 = 128 + m68000_asr_w_1(smp16);
 
-                audioDataU8[i] = (uint8_t)(smp_d);
+                audioDataU8[i] = (uint8_t)(smp16);
             }
         }
 
@@ -385,11 +413,10 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
             // add right channel to left channel
             for (i = 0; i < (sampleLength - 1); i++)
             {
-                smp_d = (audioDataS16[(i * 2) + 0] + audioDataS16[(i * 2) + 1]) / 2.0;
-                smp_d = ROUND_SMP_D(smp_d);
-                smp_d = CLAMP(smp_d, -32768.0, 32767.0);
+                smp32 = audioDataS16[(i * 2) + 0] + audioDataS16[(i * 2) + 1];
+                smp32 = m68000_asr_l_1(smp32);
 
-                audioDataS16[i] = (int16_t)(smp_d);
+                audioDataS16[i] = (int16_t)(smp32);
             }
         }
 
@@ -457,10 +484,13 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
             // add right channel to left channel
             for (i = 0; i < (sampleLength - 1); i++)
             {
-                smp_d = (audioDataS32[(i * 2) + 0] / 2.0) + (audioDataS32[(i * 2) + 1] / 2.0);
-                smp_d = CLAMP(smp_d, -2147483648.0, 2147483647.0);
-                smp_d = ROUND_SMP_D(smp_d);
-                audioDataS32[i] = (int32_t)(smp_d);
+                smp32_l = audioDataS32[(i * 2) + 0];
+                smp32_r = audioDataS32[(i * 2) + 1];
+
+                smp32_l = m68000_asr_l_1(smp32_l);
+                smp32_r = m68000_asr_l_1(smp32_r);
+
+                audioDataS32[i] = smp32_l + smp32_r;
             }
         }
 
@@ -529,7 +559,15 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
 
             // add right channel to left channel
             for (i = 0; i < (sampleLength - 1); i++)
-                audioDataS32[i] = (audioDataS32[(i * 2) + 0] / 2) + (audioDataS32[(i * 2) + 1] / 2);
+            {
+                smp32_l = audioDataS32[(i * 2) + 0];
+                smp32_r = audioDataS32[(i * 2) + 1];
+
+                smp32_l = m68000_asr_l_1(smp32_l);
+                smp32_r = m68000_asr_l_1(smp32_r);
+
+                audioDataS32[i] = smp32_l + smp32_r;
+            }
         }
 
         // 2x downsampling - remove every other sample (if needed)
@@ -597,13 +635,11 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
         {
             sampleLength /= 2;
 
-            // add right channel to left channel
+            // add right channel to left channel (this is uncorrect, but Good Enough)
             for (i = 0; i < (sampleLength - 1); i++)
             {
-                smp_f = (audioDataFloat[(i * 2) + 0] + audioDataFloat[(i * 2) + 1]) / 2.0f;
-                smp_f = CLAMP(smp_f, -1.0f, 1.0f);
-
-                audioDataFloat[i] = smp_f;
+                smp_f = (audioDataFloat[(i * 2) + 0] / 2.0f) + (audioDataFloat[(i * 2) + 1] / 2.0f);
+                audioDataFloat[i] = CLAMP(smp_f, -1.0f, 1.0f);
             }
         }
 
@@ -730,13 +766,7 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
     editor.sampleZero = false;
     editor.samplePos  = 0;
 
-    // fix beep on non-looping sample (clear first two bytes)
-    if ((s->length >= 2) && ((s->loopStart + s->loopLength) <= 2))
-    {
-        modEntry->sampleData[s->offset + 0] = 0;
-        modEntry->sampleData[s->offset + 1] = 0;
-    }
-
+    fixSampleBeep(s);
     updateCurrSample();
     fillSampleRedoBuffer(editor.currSample);
 
@@ -1007,13 +1037,7 @@ int8_t loadIFFSample(UNICHAR *fileName, char *entryName)
     editor.sampleZero = false;
     editor.samplePos  = 0;
 
-    // fix beep on non-looping sample (clear first two bytes)
-    if ((s->length >= 2) && ((s->loopStart + s->loopLength) <= 2))
-    {
-        modEntry->sampleData[s->offset + 0] = 0;
-        modEntry->sampleData[s->offset + 1] = 0;
-    }
-
+    fixSampleBeep(s);
     updateCurrSample();
     fillSampleRedoBuffer(editor.currSample);
 
@@ -1073,13 +1097,7 @@ int8_t loadRAWSample(UNICHAR *fileName, char *entryName)
     editor.sampleZero = false;
     editor.samplePos  = 0;
 
-    // fix beep on non-looping sample (clear first two bytes)
-    if (s->length >= 2)
-    {
-        modEntry->sampleData[s->offset + 0] = 0;
-        modEntry->sampleData[s->offset + 1] = 0;
-    }
-
+    fixSampleBeep(s);
     updateCurrSample();
     fillSampleRedoBuffer(editor.currSample);
 

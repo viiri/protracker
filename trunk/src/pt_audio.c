@@ -12,7 +12,7 @@
 #else
 #include <unistd.h>
 #endif
-#include <math.h> // sqrt(),tanf(),M_PI
+#include <math.h> // sqrt(),tanf(),M_PI,round(),roundf()
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -709,9 +709,9 @@ void audioCallback(void *userdata, uint8_t *stream, int32_t len)
 
 static void calculateFilterCoeffs(void)
 {
-    double lp_R, lp_C, lp_Hz;
-    double led_R1, led_R2, led_C1, led_C2, led_Hz;
-    double hp_R, hp_C, hp_Hz;
+    float lp_R, lp_C, lp_Hz;
+    float led_R1, led_R2, led_C1, led_C2, led_Hz;
+    float hp_R, hp_C, hp_Hz;
 
     // Amiga 500 filter emulation, by aciddose (Xhip author)
     // All Amiga computers have three (!) filters, not just the "LED" filter.
@@ -750,24 +750,24 @@ static void calculateFilterCoeffs(void)
     // Under spice simulation the circuit yields -3dB = 5.2Hz.
 
     // Amiga 500 RC low-pass filter:
-    lp_R  = 360.0;     // 360 ohm resistor
-    lp_C  = 0.0000001; // 0.1uF capacitor
-    lp_Hz = 1.0 / (2.0 * M_PI * lp_R * lp_C);
-    calcCoeffLossyIntegrator(editor.outputFreq_f, (float)(lp_Hz), &filterLo);
+    lp_R  = 360.0f;     // 360 ohm resistor
+    lp_C  = 0.0000001f; // 0.1uF capacitor
+    lp_Hz = 1.0 / (2.0f * 3.1415927f * lp_R * lp_C);
+    calcCoeffLossyIntegrator(editor.outputFreq_f, lp_Hz, &filterLo);
 
     // Amiga 500 Sallen-Key "LED" filter:
-    led_R1 = 10000.0;      // 10K ohm resistor
-    led_R2 = 10000.0;      // 10K ohm resistor
-    led_C1 = 0.0000000068; // 6800pF capacitor
-    led_C2 = 0.0000000039; // 3900pF capacitor
-    led_Hz = 1.0 / (2.0 * M_PI * sqrt(led_R1 * led_R2 * led_C1 * led_C2));
-    calcCoeffLED(editor.outputFreq_f, (float)(led_Hz), &filterLEDC);
+    led_R1 = 10000.0f;      // 10K ohm resistor
+    led_R2 = 10000.0f;      // 10K ohm resistor
+    led_C1 = 0.0000000068f; // 6800pF capacitor
+    led_C2 = 0.0000000039f; // 3900pF capacitor
+    led_Hz = 1.0f / (2.0f * 3.1415927f * sqrtf(led_R1 * led_R2 * led_C1 * led_C2));
+    calcCoeffLED(editor.outputFreq_f, led_Hz, &filterLEDC);
 
     // Amiga 500 RC high-pass filter:
-    hp_R  = 1390.0;   // 1K ohm resistor + 390 ohm resistor
-    hp_C  = 0.000022; // 22uF capacitor
-    hp_Hz = 1.0 / (2.0 * M_PI * hp_R * hp_C);
-    calcCoeffLossyIntegrator(editor.outputFreq_f, (float)(hp_Hz), &filterHi);
+    hp_R  = 1390.0f;   // 1K ohm resistor + 390 ohm resistor
+    hp_C  = 0.000022f; // 22uF capacitor
+    hp_Hz = 1.0f / (2.0f * 3.1415927f * hp_R * hp_C);
+    calcCoeffLossyIntegrator(editor.outputFreq_f, hp_Hz, &filterHi);
 }
 
 void mixerCalcVoicePans(uint8_t stereoSeparation)
@@ -1198,7 +1198,7 @@ void calcMod2WavTotalRows(void)
 
 int8_t quantizeFloatTo8bit(float smpFloat)
 {
-    smpFloat = ROUND_SMP_F(smpFloat);
+    smpFloat = roundf(smpFloat);
     smpFloat = CLAMP(smpFloat, -128.0f, 127.0f);
     return (int8_t)(smpFloat);
 }
@@ -1208,7 +1208,7 @@ int8_t quantize32bitTo8bit(int32_t smp32)
     double smp_d;
 
     smp_d = smp32 / 16777216.0;
-    smp_d = ROUND_SMP_D(smp_d);
+    smp_d = round(smp_d);
     smp_d = CLAMP(smp_d, -128.0, 127.0);
 
     return (int8_t)(smp_d);
@@ -1219,7 +1219,7 @@ int8_t quantize24bitTo8bit(int32_t smp32)
     double smp_d;
 
     smp_d = smp32 / 65536.0;
-    smp_d = ROUND_SMP_D(smp_d);
+    smp_d = round(smp_d);
     smp_d = CLAMP(smp_d, -128.0, 127.0);
 
     return (int8_t)(smp_d);
@@ -1227,13 +1227,13 @@ int8_t quantize24bitTo8bit(int32_t smp32)
 
 int8_t quantize16bitTo8bit(int16_t smp16)
 {
-    double smp_d;
+    float smp_f;
 
-    smp_d = smp16 / 256.0;
-    smp_d = ROUND_SMP_D(smp_d);
-    smp_d = CLAMP(smp_d, -128.0, 127.0);
+    smp_f = smp16 / 256.0f;
+    smp_f = roundf(smp_f);
+    smp_f = CLAMP(smp_f, -128.0f, 127.0f);
 
-    return (int8_t)(smp_d);
+    return (int8_t)(smp_f);
 }
 
 void normalize32bitSigned(int32_t *sampleData, uint32_t sampleLength)
@@ -1253,7 +1253,7 @@ void normalize32bitSigned(int32_t *sampleData, uint32_t sampleLength)
     if (sampleVolPeak <= 0)
         sampleVolPeak  = 1;
 
-    gain = ((4294967296.0 / 2.0) - 1.0) / (double)(sampleVolPeak);
+    gain = ((4294967296.0 / 2.0) - 1.0) / sampleVolPeak;
     for (i = 0; i < sampleLength; ++i)
         sampleData[i] = (int32_t)(sampleData[i] * gain);
 }
@@ -1275,7 +1275,7 @@ void normalize24bitSigned(int32_t *sampleData, uint32_t sampleLength)
     if (sampleVolPeak <= 0)
         sampleVolPeak  = 1;
 
-    gain = ((16777216.0 / 2.0) - 1.0) / (double)(sampleVolPeak);
+    gain = ((16777216.0 / 2.0) - 1.0) / sampleVolPeak;
     for (i = 0; i < sampleLength; ++i)
         sampleData[i] = (int32_t)(sampleData[i] * gain);
 }
@@ -1297,7 +1297,7 @@ void normalize16bitSigned(int16_t *sampleData, uint32_t sampleLength)
     if (sampleVolPeak <= 0)
         sampleVolPeak  = 1;
 
-    gain = ((65536.0f / 2.0f) - 1.0f) / (float)(sampleVolPeak);
+    gain = ((65536.0f / 2.0f) - 1.0f) / sampleVolPeak;
     for (i = 0; i < sampleLength; ++i)
         sampleData[i] = (int16_t)(sampleData[i] * gain);
 }

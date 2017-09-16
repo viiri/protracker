@@ -47,15 +47,10 @@
 
 #define TO_RGB(r, g, b) (((r) << 16) | ((g) << 8) | (b))
 
-#define ROUND_SMP_F(x) (((x) >= 0.0f) ? (floorf(x + 0.5f)) : (ceilf(x - 0.5f)))
-#define ROUND_SMP_D(x) (((x) >= 0.0)  ? ( floor(x + 0.5))  : ( ceil(x - 0.5)))
-
 void showErrorMsgBox(const char *fmt, ...);
 
 int32_t my_strnicmp(const char *s1, const char *s2, size_t n);
 
-void periodToScopeDelta(moduleChannel_t *ch, uint16_t period);
-int8_t volumeToScopeVolume(uint8_t vol);
 #ifndef _WIN32
 int8_t changePathToHome(void);
 #endif
