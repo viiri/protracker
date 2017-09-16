@@ -45,19 +45,13 @@ typedef struct ledFilterCoeff_t
 
 typedef struct voice_t
 {
-    // stuff updated by other threads
-    volatile int8_t active, stop, trigger;
+    volatile int8_t active;
     const int8_t *data, *newData;
     int32_t length, newLength, phase;
     float volume_f, delta_f, frac_f, lastDelta_f, lastFrac_f, panL_f, panR_f;
-
-    // internal stuff  ONLY read/written by audio thread
-    const int8_t *_data;
-    int32_t _length;
-    float _delta_f;
 } paulaVoice_t;
 
-static volatile int8_t filterFlags = FILTER_LP_ENABLED, clearAudioFilters;
+static volatile int8_t filterFlags = FILTER_LP_ENABLED;
 static int8_t amigaPanFlag, defStereoSep = 25, wavRenderingDone;
 int8_t forceMixerOff = false;
 static uint16_t ch1Pan, ch2Pan, ch3Pan, ch4Pan;
@@ -197,20 +191,25 @@ void clearPaulaAndScopes(void)
         v  = &paula[i];
         sc = &scope[i];
 
-        v->active  = false;
-        sc->active = false;
+        v->active       = false;
+        sc->active      = false;
+        sc->retriggered = false;
 
         v->phase    = 0;
         v->volume_f = 0.0f;
         v->delta_f  = v->lastDelta_f = 0.0f;
         v->frac_f   = v->lastFrac_f  = 0.0f;
-        v->length   = v->newLength   = 2; // setting these to 2 is IMPORTANT!
+        v->length   = v->newLength   = 2;
         v->data     = v->newData     = NULL;
         // panL/panR are set up later
 
-        memset(sc, 0, sizeof (scopeChannel_t));
-        sc->_length = sc->length = sc->newLength = 2; // setting these to 2 is IMPORTANT!
-        sc->_data   = sc->data   = sc->newData   = NULL;
+        sc->phase    = 0;
+        sc->phase_f  = 0.0f;
+        sc->volume   = 0;
+        sc->delta_f  = 0.0f;
+        sc->length   = sc->newLength   = 2; // setting these to 2 is IMPORTANT!
+        sc->loopFlag = sc->newLoopFlag = false;
+        sc->data     = sc->newData     = NULL;
     }
 
     SDL_UnlockAudio();
@@ -252,15 +251,19 @@ static void mixerSetVoicePan(uint8_t ch, uint16_t pan) // pan = 0..256
 
 void mixerKillVoice(uint8_t ch)
 {
+    paulaVoice_t *v;
     scopeChannel_t *sc;
 
+    v  = &paula[ch];
     sc = &scope[ch];
 
-    paula[ch].stop = true;
+    v->active   = false;
+    v->volume_f = 0.0f;
+    sc->active  = false;
+    sc->volume  = 0;
 
-    sc->volume = 0;
-    sc->active = false;
-    sc->updateActive = true;
+    memset(&blep[ch],    0, sizeof (blep_t));
+    memset(&blepVol[ch], 0, sizeof (blep_t));
 }
 
 void turnOffVoices(void)
@@ -270,35 +273,37 @@ void turnOffVoices(void)
     for (i = 0; i < AMIGA_VOICES; ++i)
         mixerKillVoice(i);
 
-    clearAudioFilters = true;
+    clearLossyIntegrator(&filterLo);
+    clearLossyIntegrator(&filterHi);
+    clearLEDFilter(&filterLED);
 
     editor.tuningFlag = false;
 }
 
 void paulaRestartDMA(uint8_t ch)
 {
+    int32_t length;
     paulaVoice_t *v;
     scopeChannel_t *sc;
 
     v  = &paula[ch];
     sc = &scope[ch];
 
-    v->data    = v->newData;
-    v->length  = v->newLength;
-    v->trigger = true;
-    v->active  = true;
+    length = v->newLength;
+    if (length < 2)
+        length = 2;
 
-    sc->phase    = 0;
-    sc->data     = sc->newData;
-    sc->length   = sc->newLength;
-    sc->loopFlag = sc->newLoopFlag;
-    sc->active   = true;
+    v->frac_f = 0.0f;
+    v->phase  = 0;
+    v->data   = v->newData;
+    v->length = length;
+    v->active = true;
 
-    sc->updatePhase    = true;
-    sc->updateData     = true;
-    sc->updateLength   = true;
-    sc->updateLoopFlag = true;
-    sc->updateActive   = true;
+    sc->data        = sc->newData;
+    sc->length      = length;
+    sc->active      = true;
+    sc->retriggered = true;
+    sc->loopFlag    = sc->newLoopFlag;
 }
 
 void paulaSetPeriod(uint8_t ch, uint16_t period)
@@ -342,29 +347,19 @@ void paulaSetVolume(uint8_t ch, uint16_t vol)
     scope[ch].volume   = 0 - vol;
 }
 
-// takes sample lengths in bytes instead of words
+// our Paula emulator takes sample lengths in bytes instead of words
 void paulaSetLength(uint8_t ch, uint32_t len)
 {
-    scopeChannel_t *sc;
-
-    sc = &scope[ch];
-
     if (len < 2)
         len = 2; /* needed safety for mixer and scopes */
 
-    paula[ch].newLength = len;
-
-    sc->newLength    = len;
-    sc->updateLength = true;
+    scope[ch].newLength = paula[ch].newLength = len;
 }
 
 void paulaSetData(uint8_t ch, const int8_t *src)
 {
     uint8_t smp;
     moduleSample_t *s;
-    scopeChannel_t *sc;
-
-    sc = &scope[ch];
 
     smp = modEntry->channels[ch].n_samplenum;
     PT_ASSERT(smp <= 30);
@@ -376,12 +371,9 @@ void paulaSetData(uint8_t ch, const int8_t *src)
     if (src == NULL)
         src = &modEntry->sampleData[RESERVED_SAMPLE_OFFSET]; // dummy sample
 
-    paula[ch].newData = src;
-
-    sc->newData        = src;
-    sc->newLoopFlag    = ((s->loopStart + s->loopLength) > 2) ? true : false;
-    sc->updateData     = true;
-    sc->updateLoopFlag = true;
+    paula[ch].newData     = src;
+    scope[ch].newData     = src;
+    scope[ch].newLoopFlag = ((s->loopStart + s->loopLength) > 2) ? true : false;
 }
 
 void toggleLowPassFilter(void)
@@ -435,22 +427,7 @@ void mixChannels(int32_t numSamples)
 
         for (j = 0; v->active && (j < numSamples); ++j)
         {
-            // voice updates from external threads
-            if (v->trigger)
-            {
-                v->trigger = false;
-
-                v->phase   = 0;
-                v->frac_f  = 0.0f;
-                v->_data   = v->data;
-                v->_length = v->length;
-            }
-
-            if (v->_delta_f != v->delta_f)
-                v->_delta_f  = v->delta_f;
-            // --------------------------------
-
-            dataPtr = v->_data;
+            dataPtr = v->data;
             if (dataPtr == NULL)
             {
                 tempSample_f = 0.0f;
@@ -491,21 +468,21 @@ void mixChannels(int32_t numSamples)
             mixBufferL_f[j] += (tempSample_f * v->panL_f);
             mixBufferR_f[j] += (tempSample_f * v->panR_f);
 
-            v->frac_f += v->_delta_f;
+            v->frac_f += v->delta_f;
             if (v->frac_f >= 1.0f)
             {
                 v->frac_f -= 1.0f;
 
                 v->lastFrac_f  = v->frac_f;
-                v->lastDelta_f = v->_delta_f;
+                v->lastDelta_f = v->delta_f;
 
-                if (++v->phase >= v->_length)
+                if (++v->phase >= v->length)
                 {
                     v->phase = 0;
 
                     // re-fetch Paula register values now
-                    v->_length = v->newLength;
-                    v->_data   = v->newData;
+                    v->length = v->newLength;
+                    v->data   = v->newData;
                 }
 
                 // we don't need to insert ending BLEPs anymore with this constantly running mixer
@@ -544,22 +521,7 @@ void pat2SmpMixChannels(int32_t numSamples) // pat2smp needs a multi-step mixer 
 
         for (j = 0; v->active && (j < numSamples); ++j)
         {
-            // voice updates from external threads
-            if (v->trigger)
-            {
-                v->trigger = false;
-
-                v->phase   = 0;
-                v->frac_f  = 0.0f;
-                v->_data   = v->data;
-                v->_length = v->length;
-            }
-
-            if (v->_delta_f != v->delta_f)
-                v->_delta_f  = v->delta_f;
-            // --------------------------------
-
-            dataPtr = v->_data;
+            dataPtr = v->data;
             if (dataPtr == NULL)
             {
                 tempSample_f = 0.0f;
@@ -592,7 +554,7 @@ void pat2SmpMixChannels(int32_t numSamples) // pat2smp needs a multi-step mixer 
             mixBufferL_f[j] += (tempSample_f * v->panL_f);
             mixBufferR_f[j] += (tempSample_f * v->panR_f);
 
-            v->frac_f += v->_delta_f;
+            v->frac_f += v->delta_f;
             while (v->frac_f >= 1.0f)
             {
                 fracTrunc  = (int32_t)(v->frac_f);
@@ -600,15 +562,15 @@ void pat2SmpMixChannels(int32_t numSamples) // pat2smp needs a multi-step mixer 
                 v->frac_f -= fracTrunc;
 
                 v->lastFrac_f  = v->frac_f;
-                v->lastDelta_f = v->_delta_f;
+                v->lastDelta_f = v->delta_f;
 
-                while (v->phase >= v->_length)
+                while (v->phase >= v->length)
                 {
-                    v->phase -= v->_length;
+                    v->phase -= v->length;
 
                     // re-fetch Paula register values now
-                    v->_length = v->newLength;
-                    v->_data   = v->newData;
+                    v->length = v->newLength;
+                    v->data   = v->newData;
                 }
             }
         }
@@ -708,38 +670,6 @@ void outputAudio(int16_t *target, int32_t numSamples)
     }
 }
 
-void handleExternalVoiceUpdates(void)
-{
-    uint8_t i;
-    paulaVoice_t *v;
-
-    // handle voice updates from other threads
-
-    if (clearAudioFilters)
-    {
-        clearAudioFilters = false;
-
-        clearLossyIntegrator(&filterLo);
-        clearLossyIntegrator(&filterHi);
-        clearLEDFilter(&filterLED);
-    }
-
-    for (i = 0; i < AMIGA_VOICES; ++i)
-    {
-        v = &paula[i];
-        if (v->stop)
-        {
-            v->stop = false;
-
-            v->volume_f = 0.0f;
-            v->active   = false;
-
-            memset(&blep[i],    0, sizeof (blep_t));
-            memset(&blepVol[i], 0, sizeof (blep_t));
-        }
-    }
-}
-
 void audioCallback(void *userdata, uint8_t *stream, int32_t len)
 {
     int16_t *out;
@@ -758,8 +688,6 @@ void audioCallback(void *userdata, uint8_t *stream, int32_t len)
     sampleBlock = len / 4;
     while (sampleBlock)
     {
-        handleExternalVoiceUpdates();
-
         samplesTodo = (sampleBlock < sampleCounter) ? sampleBlock : sampleCounter;
         if (samplesTodo > 0)
         {
@@ -999,7 +927,7 @@ void toggleAmigaPanMode(void)
     }
 }
 
-// MOD2WAV RELATED STUFF
+// PAT2SMP RELATED STUFF
 
 uint32_t getAudioFrame(int16_t *outStream)
 {
@@ -1007,8 +935,6 @@ uint32_t getAudioFrame(int16_t *outStream)
 
     if (intMusic() == false)
         wavRenderingDone = true;
-
-    handleExternalVoiceUpdates();
 
     b = samplesPerTick;
     while (b > 0)

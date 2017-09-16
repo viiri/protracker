@@ -279,7 +279,7 @@ int main(int argc, char *argv[])
     updateCursorPos();
 
     // setup timer stuff
-    nextTime_64bit = SDL_GetPerformanceCounter() + (uint32_t)(((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5);
+    nextTime_64bit = SDL_GetPerformanceCounter() + (int32_t)(((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5);
 
     SDL_ShowWindow(window);
     while (editor.programRunning)
@@ -985,7 +985,7 @@ static void syncMainThread(void)
     timeNow_64bit = SDL_GetPerformanceCounter();
     if (nextTime_64bit > timeNow_64bit)
     {
-        delayMs_f = ((nextTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f)) + 0.5;
+        delayMs_f = ((double)(nextTime_64bit - timeNow_64bit) * (1000.0 / perfFreq_f)) + 0.5;
 
         delayMs = (int32_t)(delayMs_f);
         if (delayMs > 0)
@@ -993,7 +993,7 @@ static void syncMainThread(void)
     }
 
     frameLength_f   = (perfFreq_f / VBLANK_HZ) + 0.5;
-    nextTime_64bit += (uint64_t)(frameLength_f);
+    nextTime_64bit += (int32_t)(frameLength_f);
 }
 
 static void readMouseXY(void)
