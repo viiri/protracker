@@ -1815,7 +1815,7 @@ void handleAskYes(void)
     uint32_t i;
     float tmpFloat;
     moduleSample_t *s;
-
+    
     switch (editor.ui.askScreenType)
     {
         case ASK_RESTORE_SAMPLE:
@@ -1877,6 +1877,8 @@ void handleAskYes(void)
             {
                 if (intMusic() == false)
                     editor.smpRenderingDone = true;
+
+                handleExternalVoiceUpdates();
 
                 outputAudio(NULL, samplesPerTick);
             }
