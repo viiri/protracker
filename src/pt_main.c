@@ -32,8 +32,8 @@
 extern int8_t forceMixerOff; // pt_audio.c
 extern uint32_t palette[PALETTE_NUM]; // pt_palette.c
 
-uint8_t bigEndian;  // globalized
-module_t *modEntry; // globalized
+uint8_t bigEndian  = false; // globalized
+module_t *modEntry = NULL;  // globalized
 
 // accessed by pt_visuals.c
 uint32_t *pixelBuffer  = NULL;
@@ -67,7 +67,9 @@ static module_t *tempMod;
 
 #ifdef __APPLE__
 static void osxSetDirToProgramDirFromArgs(char **argv);
+static int8_t checkIfAppWasTranslocated(int argc, char **argv);
 #endif
+
 static void handleInput(void);
 static int8_t initializeVars(void);
 static void loadModFromArg(char *arg);
@@ -117,11 +119,29 @@ int main(int argc, char *argv[])
         return (0);
     }
 
+    if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0)
+    {
+        showErrorMsgBox("Couldn't initialize SDL: %s", SDL_GetError());
+        return (0);
+    }
+
+    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
+
+ #ifdef __APPLE__
+    if (checkIfAppWasTranslocated(argc, argv))
+    {
+        SDL_Quit();
+        return (0);
+    }
+#endif
+
 #ifdef _WIN32
     if (IsProcessorFeaturePresent(PF_XMMI64_INSTRUCTIONS_AVAILABLE) == false)
     {
         showErrorMsgBox("Your computer's processor is too old and doesn't have the SSE2 instruction set\n" \
                         "which is needed for this program to run. Sorry!");
+
+        SDL_Quit();
         return (0);
     }
 
@@ -645,6 +665,31 @@ static void handleSigTerm(void)
     }
 }
 
+#ifdef __APPLE__
+static int8_t checkIfAppWasTranslocated(int argc, char **argv)
+{
+    const char startOfStrToCmp[] = "/private/var/folders/";
+
+    // this is not 100% guaranteed to work, but it's Good Enough
+    if ((argc > 0) && !my_strnicmp(argv[0], startOfStrToCmp, sizeof (startOfStrToCmp) - 1))
+    {
+        showErrorMsgBox(
+         "The program was translocated to a random sandbox environment for security reasons, and thus it can't find and load protracker.ini.\n\n" \
+         "Don't worry, this is normal. To fix the issue you need to move the program/.app somewhere to clear its QTN_FLAG_TRANSLOCATE flag.\n\n" \
+         "Instructions:\n" \
+         "1) Close the window.\n" \
+         "2) Move/drag (do NOT copy) the program (protracker-osx) to somewhere, then move it back to were it was. Don't move the folder, move the executable itself.\n" \
+         "3) Run the program again, and if you did it right it should be permanently fixed.\n\n" \
+         "This is not my fault, it's a security concept introduced in macOS 10.12 for unsigned programs downloaded and unzipped from the internet."
+        );
+
+        return (true);
+    }
+
+    return (false);
+}
+#endif
+
 // Windows specific routines
 #ifdef _WIN32
 static int8_t instanceAlreadyOpen(void)
@@ -943,26 +988,24 @@ static void loadDroppedFile(char *fullPath, uint32_t fullPathLen, uint8_t autoPl
 static void cleanUp(void) // never call this inside the main loop!
 {
     audioClose();
+    SDL_Delay(100);
 
-    if (timer50Hz != 0)
-        SDL_RemoveTimer(timer50Hz);
+    if (timer50Hz != 0) SDL_RemoveTimer(timer50Hz);
 
     modFree();
-
-    if (editor.rowVisitTable != NULL) free(editor.rowVisitTable);
-    if (editor.ui.pattNames  != NULL) free(editor.ui.pattNames);
-    if (editor.tempSample    != NULL) free(editor.tempSample);
-    if (editor.scopeBuffer   != NULL) free(editor.scopeBuffer);
-
     deAllocSamplerVars();
     deAllocDiskOpVars();
     freeDiskOpFileMem();
     freeBMPs();
     terminalFree();
-
-    if (ptConfig.defaultDiskOpDir != NULL) free(ptConfig.defaultDiskOpDir);
     videoClose();
     freeSprites();
+
+    if (ptConfig.defaultDiskOpDir != NULL) free(ptConfig.defaultDiskOpDir);
+    if (editor.rowVisitTable      != NULL) free(editor.rowVisitTable);
+    if (editor.ui.pattNames       != NULL) free(editor.ui.pattNames);
+    if (editor.tempSample         != NULL) free(editor.tempSample);
+    if (editor.scopeBuffer        != NULL) free(editor.scopeBuffer);
 
 #ifdef _WIN32
     UnhookWindowsHookEx(g_hKeyboardHook);

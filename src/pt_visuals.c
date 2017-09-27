@@ -2971,14 +2971,6 @@ int8_t setupVideo(void)
     SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
 #endif
 
-    if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0)
-    {
-        showErrorMsgBox("Couldn't initialize SDL: %s", SDL_GetError());
-        return (false);
-    }
-
-    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
-
     vsync60HzPresent = false;
     if (SDL_GetDesktopDisplayMode(0, &dm) == 0)
     {
