@@ -870,6 +870,8 @@ void audioClose(void)
         SDL_PauseAudioDevice(dev, true);
         SDL_CloseAudioDevice(dev);
         dev = 0;
+
+        SDL_Delay(100);
     }
 
     if (mixBufferL_f != NULL)
