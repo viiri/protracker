@@ -125,6 +125,7 @@ int main(int argc, char *argv[])
         return (0);
     }
 
+    SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
     SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
 
  #ifdef __APPLE__
@@ -1023,7 +1024,6 @@ static void loadDroppedFile(char *fullPath, uint32_t fullPathLen, uint8_t autoPl
 static void cleanUp(void) // never call this inside the main loop!
 {
     audioClose();
-    SDL_Delay(100);
 
     if (timer50Hz != 0) SDL_RemoveTimer(timer50Hz);
 
