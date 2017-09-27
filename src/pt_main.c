@@ -665,7 +665,42 @@ static void handleSigTerm(void)
     }
 }
 
+// macOS/OS X specific routines
 #ifdef __APPLE__
+static void osxSetDirToProgramDirFromArgs(char **argv)
+{
+    char *tmpPath;
+    int32_t i, tmpPathLen;
+
+    /* OS X/macOS: hackish way of setting the current working directory to the place where we double clicked
+    ** on the icon (for protracker.ini loading)
+    */
+
+    // if we launched from the terminal, argv[0][0] would be '.'
+    if ((argv[0] != NULL) && (argv[0][0] == DIR_DELIMITER)) // don't do the hack if we launched from the terminal
+    {
+        tmpPath = strdup(argv[0]);
+        if (tmpPath != NULL)
+        {
+            // cut off program filename
+            tmpPathLen = strlen(tmpPath);
+            for (i = tmpPathLen - 1; i >= 0; --i)
+            {
+                if (tmpPath[i] == DIR_DELIMITER)
+                {
+                    tmpPath[i] = '\0';
+                    break;
+                }
+            }
+
+            chdir(tmpPath);     // path to binary
+            chdir("../../../"); // we should now be in the directory where the config can be.
+
+            free(tmpPath);
+        }
+    }
+}
+
 static int8_t checkIfAppWasTranslocated(int argc, char **argv)
 {
     const char startOfStrToCmp[] = "/private/var/folders/";
@@ -678,7 +713,7 @@ static int8_t checkIfAppWasTranslocated(int argc, char **argv)
          "Don't worry, this is normal. To fix the issue you need to move the program/.app somewhere to clear its QTN_FLAG_TRANSLOCATE flag.\n\n" \
          "Instructions:\n" \
          "1) Close the window.\n" \
-         "2) Move/drag (do NOT copy) the program (protracker-osx) to somewhere, then move it back to were it was. Don't move the folder, move the executable itself.\n" \
+         "2) Move/drag (do NOT copy) the program (protracker-osx) to another folder, then move it back to were it was. Don't move the folder, move the executable itself.\n" \
          "3) Run the program again, and if you did it right it should be permanently fixed.\n\n" \
          "This is not my fault, it's a security concept introduced in macOS 10.12 for unsigned programs downloaded and unzipped from the internet."
         );
@@ -1083,39 +1118,3 @@ static void readMouseXY(void)
 
     setSpritePos(SPRITE_MOUSE_POINTER, x, y);
 }
-
-#ifdef __APPLE__
-static void osxSetDirToProgramDirFromArgs(char **argv)
-{
-    char *tmpPath;
-    int32_t i, tmpPathLen;
-
-    /* OS X/macOS: hackish way of setting the current working directory to the place where we double clicked
-    ** on the icon (for protracker.ini loading)
-    */
-
-    // if we launched from the terminal, argv[0][0] would be '.'
-    if ((argv[0] != NULL) && (argv[0][0] == DIR_DELIMITER)) // don't do the hack if we launched from the terminal
-    {
-        tmpPath = strdup(argv[0]);
-        if (tmpPath != NULL)
-        {
-            // cut off program filename
-            tmpPathLen = strlen(tmpPath);
-            for (i = tmpPathLen - 1; i >= 0; --i)
-            {
-                if (tmpPath[i] == DIR_DELIMITER)
-                {
-                    tmpPath[i] = '\0';
-                    break;
-                }
-            }
-
-            chdir(tmpPath);     // path to binary
-            chdir("../../../"); // we should now be in the directory where the config can be.
-
-            free(tmpPath);
-        }
-    }
-}
-#endif
