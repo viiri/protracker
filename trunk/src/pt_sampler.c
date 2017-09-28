@@ -2066,7 +2066,7 @@ void samplerShowAll(void)
     displaySample();
 }
 
-static void samplerZoomIn(int32_t step)
+static void samplerZoomIn(int32_t step, int16_t x)
 {
     int32_t tmpDisplay, tmpOffset;
 
@@ -2080,7 +2080,12 @@ static void samplerZoomIn(int32_t step)
     if (tmpDisplay < 2)
         tmpDisplay = 2;
 
+    step += (((x - (SCREEN_W / 2)) * step) / (SCREEN_W / 2));
+
     tmpOffset = editor.sampler.samOffset + step;
+    if (tmpOffset < 0)
+        tmpOffset = 0;
+
     if ((tmpOffset + tmpDisplay) > editor.sampler.samLength)
         tmpOffset = editor.sampler.samLength - tmpDisplay;
 
@@ -2090,7 +2095,7 @@ static void samplerZoomIn(int32_t step)
     displaySample();
 }
 
-static void samplerZoomOut(int32_t step)
+static void samplerZoomOut(int32_t step, int16_t x)
 {
     int32_t tmpDisplay, tmpOffset;
 
@@ -2108,6 +2113,8 @@ static void samplerZoomOut(int32_t step)
     }
     else
     {
+        step += (((x - (SCREEN_W / 2)) * step) / (SCREEN_W / 2));
+
         tmpOffset = editor.sampler.samOffset - step;
         if (tmpOffset < 0)
             tmpOffset = 0;
@@ -2130,7 +2137,7 @@ void samplerZoomInMouseWheel(void)
     step_f = editor.sampler.samDisplay / 10.0f;
     step   = (int32_t)(step_f + 0.5f);
 
-    samplerZoomIn(step);
+    samplerZoomIn(step, input.mouse.x);
 }
 
 void samplerZoomOutMouseWheel(void)
@@ -2141,7 +2148,7 @@ void samplerZoomOutMouseWheel(void)
     step_f = editor.sampler.samDisplay / 10.0f;
     step   = (int32_t)(step_f + 0.5f);
 
-    samplerZoomOut(step);
+    samplerZoomOut(step, input.mouse.x);
 }
 
 void samplerZoomOut2x(void)
@@ -2152,7 +2159,7 @@ void samplerZoomOut2x(void)
     step_f = editor.sampler.samDisplay / 2.0f;
     step   = (int32_t)(step_f + 0.5f);
 
-    samplerZoomOut(step);
+    samplerZoomOut(step, SCREEN_W / 2);
 }
 
 void samplerRangeAll(void)
