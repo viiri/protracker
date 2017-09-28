@@ -2066,21 +2066,21 @@ void samplerShowAll(void)
     displaySample();
 }
 
-void samplerZoomIn(int32_t step)
+static void samplerZoomIn(int32_t step)
 {
     int32_t tmpDisplay, tmpOffset;
 
-    if ((modEntry->samples[editor.currSample].length == 0) || (editor.sampler.samDisplay < 2))
+    if ((modEntry->samples[editor.currSample].length == 0) || (editor.sampler.samDisplay <= 2))
         return;
 
     if (step < 1)
         step = 1;
 
-    tmpDisplay = editor.sampler.samDisplay - step;
+    tmpDisplay = editor.sampler.samDisplay - (step * 2);
     if (tmpDisplay < 2)
         tmpDisplay = 2;
 
-    tmpOffset = editor.sampler.samOffset + (step / 2);
+    tmpOffset = editor.sampler.samOffset + step;
     if ((tmpOffset + tmpDisplay) > editor.sampler.samLength)
         tmpOffset = editor.sampler.samLength - tmpDisplay;
 
@@ -2090,7 +2090,7 @@ void samplerZoomIn(int32_t step)
     displaySample();
 }
 
-void samplerZoomOut(int32_t step)
+static void samplerZoomOut(int32_t step)
 {
     int32_t tmpDisplay, tmpOffset;
 
@@ -2100,7 +2100,7 @@ void samplerZoomOut(int32_t step)
     if (step < 1)
         step = 1;
 
-    tmpDisplay = editor.sampler.samDisplay + step;
+    tmpDisplay = editor.sampler.samDisplay + (step * 2);
     if (tmpDisplay > editor.sampler.samLength)
     {
         tmpOffset  = 0;
@@ -2108,7 +2108,7 @@ void samplerZoomOut(int32_t step)
     }
     else
     {
-        tmpOffset = editor.sampler.samOffset - (step / 2);
+        tmpOffset = editor.sampler.samOffset - step;
         if (tmpOffset < 0)
             tmpOffset = 0;
 
@@ -2120,6 +2120,39 @@ void samplerZoomOut(int32_t step)
     editor.sampler.samDisplay = tmpDisplay;
 
     displaySample();
+}
+
+void samplerZoomInMouseWheel(void)
+{
+    int32_t step;
+    float step_f;
+
+    step_f = editor.sampler.samDisplay / 10.0f;
+    step   = (int32_t)(step_f + 0.5f);
+
+    samplerZoomIn(step);
+}
+
+void samplerZoomOutMouseWheel(void)
+{
+    int32_t step;
+    float step_f;
+
+    step_f = editor.sampler.samDisplay / 10.0f;
+    step   = (int32_t)(step_f + 0.5f);
+
+    samplerZoomOut(step);
+}
+
+void samplerZoomOut2x(void)
+{
+    int32_t step;
+    float step_f;
+
+    step_f = editor.sampler.samDisplay / 2.0f;
+    step   = (int32_t)(step_f + 0.5f);
+
+    samplerZoomOut(step);
 }
 
 void samplerRangeAll(void)

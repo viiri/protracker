@@ -2844,7 +2844,7 @@ void mouseWheelUpHandler(void)
                 if (editor.ui.samplerScreenShown)
                 {
                     // sampler screen
-                    samplerZoomIn(editor.sampler.samDisplay / 10);
+                    samplerZoomInMouseWheel();
                 }
                 else
                 {
@@ -2899,7 +2899,7 @@ void mouseWheelDownHandler(void)
                 if (editor.ui.samplerScreenShown)
                 {
                     // sampler screen
-                    samplerZoomOut(editor.sampler.samDisplay / 10);
+                    samplerZoomOutMouseWheel();
                 }
                 else
                 {
@@ -4948,7 +4948,7 @@ int8_t handleLeftMouseButton(void)
                 case PTB_SA_RANGEBEG:      sampleMarkerToBeg();          break;
                 case PTB_SA_RANGEEND:      sampleMarkerToEnd();          break;
 
-                case PTB_SA_ZOOMOUT: samplerZoomOut(editor.sampler.samDisplay); break;
+                case PTB_SA_ZOOMOUT: samplerZoomOut2x(); break;
 
                 case PTB_SA_VOLUME:
                 {
