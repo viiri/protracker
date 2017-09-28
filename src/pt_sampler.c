@@ -2066,35 +2066,58 @@ void samplerShowAll(void)
     displaySample();
 }
 
-void samplerZoomOut(void)
+void samplerZoomIn(int32_t step)
 {
-    int32_t newDisplay, tmpDisplay, tmpOffset;
+    int32_t tmpDisplay, tmpOffset;
 
-    if (editor.sampler.samDisplay == editor.sampler.samLength)
-        return; // don't attempt to zoom out if 100% zoomed out
+    if ((modEntry->samples[editor.currSample].length == 0) || (editor.sampler.samDisplay < 2))
+        return;
 
-    tmpOffset  = editor.sampler.samOffset;
-    tmpDisplay = editor.sampler.samDisplay;
+    if (step < 1)
+        step = 1;
 
-    newDisplay = editor.sampler.samDisplay * 2;
-    if (newDisplay > editor.sampler.samLength)
+    tmpDisplay = editor.sampler.samDisplay - step;
+    if (tmpDisplay < 2)
+        tmpDisplay = 2;
+
+    tmpOffset = editor.sampler.samOffset + (step / 2);
+    if ((tmpOffset + tmpDisplay) > editor.sampler.samLength)
+        tmpOffset = editor.sampler.samLength - tmpDisplay;
+
+    editor.sampler.samOffset  = tmpOffset;
+    editor.sampler.samDisplay = tmpDisplay;
+
+    displaySample();
+}
+
+void samplerZoomOut(int32_t step)
+{
+    int32_t tmpDisplay, tmpOffset;
+
+    if ((modEntry->samples[editor.currSample].length == 0) || (editor.sampler.samDisplay == editor.sampler.samLength))
+        return;
+
+    if (step < 1)
+        step = 1;
+
+    tmpDisplay = editor.sampler.samDisplay + step;
+    if (tmpDisplay > editor.sampler.samLength)
     {
-        editor.sampler.samOffset = 0;
-        editor.sampler.samDisplay = editor.sampler.samLength;
+        tmpOffset  = 0;
+        tmpDisplay = editor.sampler.samLength;
     }
     else
     {
-        tmpDisplay /= 2;
-        if (tmpOffset >= tmpDisplay)
-            tmpOffset -= tmpDisplay;
+        tmpOffset = editor.sampler.samOffset - (step / 2);
+        if (tmpOffset < 0)
+            tmpOffset = 0;
 
-        tmpDisplay = tmpOffset + newDisplay;
-        if (tmpDisplay > editor.sampler.samLength)
-            tmpOffset  = editor.sampler.samLength - newDisplay;
-
-        editor.sampler.samOffset  = tmpOffset;
-        editor.sampler.samDisplay = newDisplay;
+        if ((tmpOffset + tmpDisplay) > editor.sampler.samLength)
+            tmpOffset = editor.sampler.samLength - tmpDisplay;
     }
+
+    editor.sampler.samOffset  = tmpOffset;
+    editor.sampler.samDisplay = tmpDisplay;
 
     displaySample();
 }
