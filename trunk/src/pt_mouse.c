@@ -2807,7 +2807,7 @@ void handleTextEditing(uint8_t mouseButton)
 
 void mouseWheelUpHandler(void)
 {
-    if (!editor.ui.editTextFlag      && !editor.ui.askScreenShown &&
+    if (!editor.ui.editTextFlag     && !editor.ui.askScreenShown &&
         !editor.ui.clearScreenShown && !editor.swapChannelFlag)
     {
         if (editor.ui.terminalShown)
@@ -2815,30 +2815,51 @@ void mouseWheelUpHandler(void)
             terminalScrollUp();
             terminalScrollUp();
         }
-        else if (editor.ui.posEdScreenShown)
+        else
         {
-            if (modEntry->currOrder > 0)
-                modSetPos(modEntry->currOrder - 1, DONT_SET_ROW);
-        }
-        else if (editor.ui.diskOpScreenShown)
-        {
-            if (editor.diskop.scrollOffset > 0)
+            if (input.mouse.y < 121)
             {
-                editor.diskop.scrollOffset--;
-                editor.ui.updateDiskOpFileList = true;
+                // upper part of screen
+
+                if (editor.ui.diskOpScreenShown)
+                {
+                    // disk op
+                    if (editor.diskop.scrollOffset > 0)
+                    {
+                        editor.diskop.scrollOffset--;
+                        editor.ui.updateDiskOpFileList = true;
+                    }
+                }
+                else if (editor.ui.posEdScreenShown)
+                {
+                    // position editor
+                    if (modEntry->currOrder > 0)
+                        modSetPos(modEntry->currOrder - 1, DONT_SET_ROW);
+                }
             }
-        }
-        else if (!editor.ui.samplerScreenShown && !editor.songPlaying)
-        {
-            if (modEntry->currRow > 0)
-                modSetPos(DONT_SET_ORDER, modEntry->currRow - 1);
+            else
+            {
+                // lower part of screen
+
+                if (editor.ui.samplerScreenShown)
+                {
+                    // sampler screen
+                    samplerZoomIn(editor.sampler.samDisplay / 10);
+                }
+                else
+                {
+                    // pattern data
+                    if (!editor.songPlaying && (modEntry->currRow > 0))
+                        modSetPos(DONT_SET_ORDER, modEntry->currRow - 1);
+                }
+            }
         }
     }
 }
 
 void mouseWheelDownHandler(void)
 {
-    if (!editor.ui.editTextFlag      && !editor.ui.askScreenShown &&
+    if (!editor.ui.editTextFlag     && !editor.ui.askScreenShown &&
         !editor.ui.clearScreenShown && !editor.swapChannelFlag)
     {
         if (editor.ui.terminalShown)
@@ -2846,26 +2867,47 @@ void mouseWheelDownHandler(void)
             terminalScrollDown();
             terminalScrollDown();
         }
-        else if (editor.ui.posEdScreenShown)
+        else
         {
-            if (modEntry->currOrder < (modEntry->head.orderCount - 1))
-                modSetPos(modEntry->currOrder + 1, DONT_SET_ROW);
-        }
-        else if (editor.ui.diskOpScreenShown)
-        {
-            if (editor.diskop.numFiles > DISKOP_LIST_SIZE)
+            if (input.mouse.y < 121)
             {
-                if (editor.diskop.scrollOffset < (editor.diskop.numFiles - DISKOP_LIST_SIZE))
+                // upper part of screen
+
+                if (editor.ui.diskOpScreenShown)
                 {
-                    editor.diskop.scrollOffset++;
-                    editor.ui.updateDiskOpFileList = true;
+                    // disk op
+                    if (editor.diskop.numFiles > DISKOP_LIST_SIZE)
+                    {
+                        if (editor.diskop.scrollOffset < (editor.diskop.numFiles - DISKOP_LIST_SIZE))
+                        {
+                            editor.diskop.scrollOffset++;
+                            editor.ui.updateDiskOpFileList = true;
+                        }
+                    }
+                }
+                else if (editor.ui.posEdScreenShown)
+                {
+                    // position editor
+                    if (modEntry->currOrder < (modEntry->head.orderCount - 1))
+                        modSetPos(modEntry->currOrder + 1, DONT_SET_ROW);
                 }
             }
-        }
-        else if (!editor.ui.samplerScreenShown && !editor.songPlaying)
-        {
-            if (modEntry->currRow < MOD_ROWS)
-                modSetPos(DONT_SET_ORDER, modEntry->currRow + 1);
+            else
+            {
+                // lower part of screen
+
+                if (editor.ui.samplerScreenShown)
+                {
+                    // sampler screen
+                    samplerZoomOut(editor.sampler.samDisplay / 10);
+                }
+                else
+                {
+                    // pattern data
+                    if (!editor.songPlaying && (modEntry->currRow < MOD_ROWS))
+                        modSetPos(DONT_SET_ORDER, modEntry->currRow + 1);
+                }
+            }
         }
     }
 }
@@ -4905,7 +4947,8 @@ int8_t handleLeftMouseButton(void)
                 case PTB_SA_RANGECENTER:   sampleMarkerToCenter();       break;
                 case PTB_SA_RANGEBEG:      sampleMarkerToBeg();          break;
                 case PTB_SA_RANGEEND:      sampleMarkerToEnd();          break;
-                case PTB_SA_ZOOMOUT:       samplerZoomOut();             break;
+
+                case PTB_SA_ZOOMOUT: samplerZoomOut(editor.sampler.samDisplay); break;
 
                 case PTB_SA_VOLUME:
                 {
