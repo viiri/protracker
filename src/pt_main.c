@@ -732,9 +732,9 @@ static int8_t instanceAlreadyOpen(void)
 {
     hMapFile = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, sharedHwndName);
     if (hMapFile != NULL)
-        return (true); /* another instance is already open */
+        return (true); // another instance is already open
 
-    /* no instance is open, let's created a shared memory file with hWnd in it */
+    // no instance is open, let's created a shared memory file with hWnd in it
     oneInstHandle = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof (HWND), sharedHwndName);
     if (oneInstHandle != NULL)
     {

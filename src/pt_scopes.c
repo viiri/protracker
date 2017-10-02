@@ -19,16 +19,16 @@ static uint64_t timeNext64;
 extern int8_t forceMixerOff;  // pt_audio.c
 extern uint32_t *pixelBuffer; // pt_main.c
 
-// 16-bit arithmetic shift right by 9
+// 16-bit arithmetic shift right by 8
 #if defined (__APPLE__) || defined (_WIN32)
-#define m68000_asr_w_9(x) ((x) >> 9)
+#define m68000_asr_w_8(x) ((x) >> 8)
 #else
-inline int16_t m68000_asr_w_9(int16_t x)
+inline int16_t m68000_asr_w_8(int16_t x)
 {
     if (x < 0)
-        x = 0xFF80 | ((uint16_t)(x) >> 9); // 0xFF80 = 2^16 - 2^(16-9)
+        x = 0xFF00 | ((uint16_t)(x) >> 8); // 0xFF80 = 2^16 - 2^(16-9)
     else
-        x >>= 9;
+        x >>= 8;
 
     return (x);
 }
@@ -37,7 +37,7 @@ inline int16_t m68000_asr_w_9(int16_t x)
 void updateScopes(void)
 {
     uint8_t i;
-    int32_t samplePlayPos;
+    int32_t fracTrunc, samplePlayPos;
     scopeChannel_t *sc;
     moduleSample_t *s;
 
@@ -54,28 +54,41 @@ void updateScopes(void)
         {
             sc->retriggered = false;
 
-            // we just (re)triggered the scopes, reset integer phase and set new phase for next cycle
-            sc->phase   = 0;
-            sc->phase_f = sc->delta_f; // phase_f = 0.0f; phase_f += sc->delta_f;
+            sc->frac_f = 0.0f;
+            sc->phase  = 0;
+
+            // data/length is already set from replayer thread (important)
+            sc->loopFlag  = sc->newLoopFlag;
+            sc->loopStart = sc->newLoopStart;
+
+            sc->didSwapData = false;
         }
         else if (sc->active)
         {
-            // slow, but can't use modulus since I need to make a swap event after every full sample cycle.
-            // max iterations: ~261 = ((paula_clock / vblank_hz) / lowest_period) / smallest_loop_length
-            if (sc->length > 0)
+            sc->frac_f += sc->delta_f;
+            if (sc->frac_f >= 1.0f)
             {
-                while (sc->phase_f >= sc->length)
-                {
-                    sc->phase_f -= sc->length;
+                fracTrunc = (int32_t)(sc->frac_f);
 
-                    sc->length   = sc->newLength;
-                    sc->data     = sc->newData;
-                    sc->loopFlag = sc->newLoopFlag; // used for scope display wrapping
+                sc->frac_f -= fracTrunc;
+                sc->phase  += fracTrunc;
+
+                if (sc->phase >= sc->length)
+                {
+                    while (sc->phase >= sc->length)
+                    {
+                        sc->phase -= sc->length;
+                        sc->length = sc->newLength;
+                    }
+
+                    sc->data = sc->newData;
+
+                    sc->loopFlag  = sc->newLoopFlag;
+                    sc->loopStart = sc->newLoopStart;
+
+                    sc->didSwapData = true;
                 }
             }
-
-            sc->phase    = (int32_t)(sc->phase_f); // truncate
-            sc->phase_f += sc->delta_f;
         }
 
         // update sample read position sprite (TODO: could use less extensive 'if' logic)
@@ -100,9 +113,9 @@ void drawScopes(void)
 {
     const int8_t *readPtr;
     int8_t volume;
-    uint8_t i, y, totalVoicesActive;
+    uint8_t i, y, totalVoicesActive, didSwapData;
     int16_t scopeData;
-    int32_t x, readPos, monoScopeBuffer[MONOSCOPE_WIDTH], scopeTemp, dataLen;
+    int32_t x, readPos, monoScopeBuffer[MONOSCOPE_WIDTH], scopeTemp, dataLen, loopStart;
     const uint32_t *ptr32Src;
     uint32_t *ptr32Dst, *scopePtr, scopePixel;
     scopeChannel_t *sc;
@@ -146,12 +159,27 @@ void drawScopes(void)
 
                 if (sc->loopFlag)
                 {
+                    didSwapData = sc->didSwapData;
+                    loopStart   = sc->loopStart;
+
                     for (x = 0; x < SCOPE_WIDTH; ++x)
                     {
-                        scopeData = readPtr[readPos++ % dataLen] * volume;
-                        scopeData = m68000_asr_w_9(scopeData);
+                        if (didSwapData)
+                        {
+                            // readPtr = loopStartPtr, wrap readPos to 0
+                            readPos %= dataLen;
+                        }
+                        else if (readPos >= dataLen)
+                        {
+                            // readPtr = sampleStartPtr, wrap readPos to loop start
+                            readPos  = loopStart;
+                        }
+
+                        scopeData = readPtr[readPos++] * volume;
+                        scopeData = m68000_asr_w_8(scopeData);
 
                         scopePtr[(scopeData * SCREEN_W) + x] = scopePixel;
+
                     }
                 }
                 else
@@ -161,8 +189,8 @@ void drawScopes(void)
                         scopeData = 0;
                         if (readPos < dataLen)
                         {
-                            scopeData = readPtr[readPos++ % dataLen] * volume;
-                            scopeData = m68000_asr_w_9(scopeData);
+                            scopeData = readPtr[readPos++] * volume;
+                            scopeData = m68000_asr_w_8(scopeData);
                         }
 
                         scopePtr[(scopeData * SCREEN_W) + x] = scopePixel;
@@ -208,16 +236,32 @@ void drawScopes(void)
 
                 if (sc->loopFlag)
                 {
+                    didSwapData = sc->didSwapData;
+                    loopStart   = sc->loopStart;
+
                     for (x = 0; x < MONOSCOPE_WIDTH; ++x)
-                        monoScopeBuffer[x] += (readPtr[readPos++ % dataLen] * volume);
+                    {
+                        if (didSwapData)
+                        {
+                            // readPtr = loopStartPtr, wrap readPos to 0
+                            readPos %= dataLen;
+                        }
+                        else if (readPos >= dataLen)
+                        {
+                            // readPtr = sampleStartPtr, wrap readPos to loop start
+                            readPos  = loopStart;
+                        }
+
+                        monoScopeBuffer[x] += (readPtr[readPos++] * volume);
+                    }
                 }
                 else
                 {
-                    if (dataLen > MONOSCOPE_WIDTH)
-                        dataLen = MONOSCOPE_WIDTH;
-
-                    for (x = 0; x < dataLen; ++x)
-                        monoScopeBuffer[x] += (readPtr[readPos++] * volume);
+                    for (x = 0; x < MONOSCOPE_WIDTH; ++x)
+                    {
+                        if (readPos < dataLen)
+                            monoScopeBuffer[x] += (readPtr[readPos++] * volume);
+                    }
                 }
 
                 totalVoicesActive++;
