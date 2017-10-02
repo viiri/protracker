@@ -104,15 +104,16 @@ int main(int argc, char *argv[])
     if (((sdlVer.major != SDL_MAJOR_VERSION) || (sdlVer.minor != SDL_MINOR_VERSION) || (sdlVer.patch != SDL_PATCHLEVEL)))
     {
 #ifdef _WIN32
-        showErrorMsgBox("SDL2.dll is not the correct version, and the program will terminate.\n\n" \
+        showErrorMsgBox("SDL2.dll is not the expected version, the program will terminate.\n\n" \
                         "Loaded dll version: %d.%d.%d\n" \
-                        "Required dll version: %d.%d.%d",
+                        "Required (compiled with) version: %d.%d.%d\n\n" \
+                        "The needed SDL2.dll is located in the .zip from 16-bits.org/pt.php.\n",
                         sdlVer.major, sdlVer.minor, sdlVer.patch,
                         SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
 #else
-        showErrorMsgBox("The loaded SDL2 library is not the correct version, and the program will terminate.\n\n" \
+        showErrorMsgBox("The loaded SDL2 library is not the expected version, the program will terminate.\n\n" \
                         "Loaded library version: %d.%d.%d\n" \
-                        "Required library version: %d.%d.%d",
+                        "Required (compiled with) version: %d.%d.%d",
                         sdlVer.major, sdlVer.minor, sdlVer.patch,
                         SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
 #endif
