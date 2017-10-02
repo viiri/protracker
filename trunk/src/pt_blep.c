@@ -33,25 +33,27 @@ void blepAdd(blep_t *b, float offset, float amplitude)
 
     PT_ASSERT(offset >= 0.0f);
     PT_ASSERT(offset <= 1.0f);
+
     if ((offset < 0.0f) || (offset > 1.0f))
         return;
 
-    i  = (uint32_t)(offset * BLEP_SP);
+    i = (uint32_t)(offset * BLEP_SP);
     blepSrc = (const float *)(blepData) + i + BLEP_OS;
 
     f = (offset * BLEP_SP) - i;
     i = b->index;
-    n = BLEP_NS;
 
+    n = BLEP_NS;
     while (n--)
     {
         PT_ASSERT((blepSrc < (const float *)(&blepData[47])) && (i <= BLEP_RNS));
 
         b->buffer[i] += (amplitude * LERP(blepSrc[0], blepSrc[1], f));
-        blepSrc      += BLEP_SP;
 
         i++;
         i &= BLEP_RNS;
+
+        blepSrc += BLEP_SP;
     }
 
     b->samplesLeft = BLEP_NS;

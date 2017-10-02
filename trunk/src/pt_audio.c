@@ -45,7 +45,7 @@ typedef struct ledFilterCoeff_t
 
 typedef struct voice_t
 {
-    volatile int8_t active;
+    volatile int8_t active, retriggered;
     const int8_t *data, *newData;
     int32_t length, newLength, phase;
     float volume_f, delta_f, frac_f, lastDelta_f, lastFrac_f, panL_f, panR_f;
@@ -58,7 +58,7 @@ static uint16_t ch1Pan, ch2Pan, ch3Pan, ch4Pan;
 int32_t samplesPerTick;
 static int32_t sampleCounter, maxSamplesToMix;
 static float *mixBufferL_f, *mixBufferR_f;
-static blep_t blep[AMIGA_VOICES], blepVol[AMIGA_VOICES];
+static blep_t blep[AMIGA_VOICES];
 static lossyIntegrator_t filterLo, filterHi;
 static ledFilterCoeff_t filterLEDC;
 static ledFilter_t filterLED;
@@ -191,25 +191,14 @@ void clearPaulaAndScopes(void)
         v  = &paula[i];
         sc = &scope[i];
 
-        v->active       = false;
-        sc->active      = false;
-        sc->retriggered = false;
-
-        v->phase    = 0;
-        v->volume_f = 0.0f;
-        v->delta_f  = v->lastDelta_f = 0.0f;
-        v->frac_f   = v->lastFrac_f  = 0.0f;
-        v->length   = v->newLength   = 2;
-        v->data     = v->newData     = NULL;
+        memset(v, 0, sizeof (paulaVoice_t));
+        v->data = v->newData = NULL;
         // panL/panR are set up later
 
-        sc->phase    = 0;
-        sc->phase_f  = 0.0f;
-        sc->volume   = 0;
-        sc->delta_f  = 0.0f;
-        sc->length   = sc->newLength   = 2; // setting these to 2 is IMPORTANT!
-        sc->loopFlag = sc->newLoopFlag = false;
-        sc->data     = sc->newData     = NULL;
+        memset(sc, 0, sizeof (scopeChannel_t));
+        sc->data = sc->newData = NULL;
+
+        sc->length = sc->newLength = 2; // setting these to 2 is IMPORTANT for the scopes!
     }
 
     SDL_UnlockAudio();
@@ -261,9 +250,9 @@ void mixerKillVoice(uint8_t ch)
     v->volume_f = 0.0f;
     sc->active  = false;
     sc->volume  = 0;
+    sc->didSwapData = false;
 
-    memset(&blep[ch],    0, sizeof (blep_t));
-    memset(&blepVol[ch], 0, sizeof (blep_t));
+    memset(&blep[ch], 0, sizeof (blep_t));
 }
 
 void turnOffVoices(void)
@@ -299,11 +288,10 @@ void paulaRestartDMA(uint8_t ch)
     v->length = length;
     v->active = true;
 
-    sc->data        = sc->newData;
     sc->length      = length;
-    sc->active      = true;
+    sc->data        = sc->newData;
     sc->retriggered = true;
-    sc->loopFlag    = sc->newLoopFlag;
+    sc->active      = true;
 }
 
 void paulaSetPeriod(uint8_t ch, uint16_t period)
@@ -344,14 +332,14 @@ void paulaSetVolume(uint8_t ch, uint16_t vol)
         vol = 0x40;
 
     paula[ch].volume_f = vol * (1.0f / 64.0f);
-    scope[ch].volume   = 0 - vol;
+    scope[ch].volume   = 0 - (vol / 2);
 }
 
 // our Paula emulator takes sample lengths in bytes instead of words
 void paulaSetLength(uint8_t ch, uint32_t len)
 {
     if (len < 2)
-        len = 2; /* needed safety for mixer and scopes */
+        len = 2; // needed safety for mixer and scopes
 
     scope[ch].newLength = paula[ch].newLength = len;
 }
@@ -360,6 +348,9 @@ void paulaSetData(uint8_t ch, const int8_t *src)
 {
     uint8_t smp;
     moduleSample_t *s;
+    scopeChannel_t *sc;
+
+    sc = &scope[ch];
 
     smp = modEntry->channels[ch].n_samplenum;
     PT_ASSERT(smp <= 30);
@@ -371,9 +362,10 @@ void paulaSetData(uint8_t ch, const int8_t *src)
     if (src == NULL)
         src = &modEntry->sampleData[RESERVED_SAMPLE_OFFSET]; // dummy sample
 
-    paula[ch].newData     = src;
-    scope[ch].newData     = src;
-    scope[ch].newLoopFlag = ((s->loopStart + s->loopLength) > 2) ? true : false;
+    sc->newData = paula[ch].newData = src;
+
+    sc->newLoopFlag  = (s->loopStart + s->loopLength) > 2;
+    sc->newLoopStart = s->loopStart;
 }
 
 void toggleLowPassFilter(void)
@@ -400,12 +392,11 @@ void toggleLowPassFilter(void)
 void mixChannels(int32_t numSamples)
 {
     const int8_t *dataPtr;
-    int8_t tmpVol;
     uint8_t i;
     int32_t j;
     volatile float *vuMeter_f;
-    float tempSample_f, tempVolume_f, mutedVol_f;
-    blep_t *bSmp, *bVol;
+    float tempSample_f, mutedVol_f, tmpVol_f;
+    blep_t *bSmp;
     paulaVoice_t *v;
 
     memset(mixBufferL_f, 0, sizeof (float) * numSamples);
@@ -413,9 +404,9 @@ void mixChannels(int32_t numSamples)
 
     for (i = 0; i < AMIGA_VOICES; ++i)
     {
-        v         = &paula[i];
-        bSmp      = &blep[i];
-        bVol      = &blepVol[i];
+        v    = &paula[i];
+        bSmp = &blep[i];
+
         vuMeter_f = &editor.realVuMeterVolumes[i];
 
         mutedVol_f = -1.0f;
@@ -425,44 +416,33 @@ void mixChannels(int32_t numSamples)
             v->volume_f = 0.0f;
         }
 
+        // v->active is only changed when the user stops the song or starts the song
+        // (or if a channel is started for the first time)
         for (j = 0; v->active && (j < numSamples); ++j)
         {
             dataPtr = v->data;
             if (dataPtr == NULL)
-            {
                 tempSample_f = 0.0f;
-                tempVolume_f = 0.0f;
-            }
             else
-            {
-                tempSample_f = dataPtr[v->phase] * (1.0f / 128.0f);
-                tempVolume_f = v->volume_f;
-            }
+                tempSample_f = (dataPtr[v->phase] * (1.0f / 128.0f)) * v->volume_f;
 
             if (tempSample_f != bSmp->lastValue)
             {
                 if ((v->lastDelta_f > 0.0f) && (v->lastDelta_f > v->lastFrac_f))
                     blepAdd(bSmp, v->lastFrac_f / v->lastDelta_f, bSmp->lastValue - tempSample_f);
+
                 bSmp->lastValue = tempSample_f;
             }
 
-            if (tempVolume_f != bVol->lastValue)
-            {
-                blepAdd(bVol, 0.0f, bVol->lastValue - tempVolume_f);
-                bVol->lastValue = tempVolume_f;
-            }
-
-            if (bSmp->samplesLeft) tempSample_f += blepRun(bSmp);
-            if (bVol->samplesLeft) tempVolume_f += blepRun(bVol);
-
-            tempSample_f *= tempVolume_f;
+            if (bSmp->samplesLeft)
+                tempSample_f += blepRun(bSmp);
 
             if (editor.ui.realVuMeters)
             {
-                tmpVol = tempSample_f * 48.0f;
-                tmpVol = ABS(tmpVol);
-                if (tmpVol > *vuMeter_f)
-                    *vuMeter_f = tmpVol;
+                tmpVol_f = tempSample_f * 48.0f;
+                tmpVol_f = ABS(tmpVol_f);
+                if (tmpVol_f > *vuMeter_f)
+                    *vuMeter_f = tmpVol_f;
             }
 
             mixBufferL_f[j] += (tempSample_f * v->panL_f);
@@ -498,9 +478,9 @@ void pat2SmpMixChannels(int32_t numSamples) // pat2smp needs a multi-step mixer 
 {
     const int8_t *dataPtr;
     uint8_t i;
-    int32_t j, fracTrunc;
-    float tempSample_f, tempVolume_f, mutedVol_f;
-    blep_t *bSmp, *bVol;
+    int32_t j;
+    float tempSample_f, mutedVol_f;
+    blep_t *bSmp;
     paulaVoice_t *v;
 
     memset(mixBufferL_f, 0, sizeof (float) * numSamples);
@@ -510,7 +490,6 @@ void pat2SmpMixChannels(int32_t numSamples) // pat2smp needs a multi-step mixer 
     {
         v    = &paula[i];
         bSmp = &blep[i];
-        bVol = &blepVol[i];
 
         mutedVol_f = -1.0f;
         if (editor.muted[i])
@@ -519,37 +498,28 @@ void pat2SmpMixChannels(int32_t numSamples) // pat2smp needs a multi-step mixer 
             v->volume_f = 0.0f;
         }
 
+        // v->active is only changed when the user stops the song or starts the song
+        // (or if a channel is started for the first time)
         for (j = 0; v->active && (j < numSamples); ++j)
         {
             dataPtr = v->data;
             if (dataPtr == NULL)
-            {
                 tempSample_f = 0.0f;
-                tempVolume_f = 0.0f;
-            }
             else
-            {
-                tempSample_f = dataPtr[v->phase] * (1.0f / 128.0f);
-                tempVolume_f = v->volume_f;
-            }
+                tempSample_f = (dataPtr[v->phase] * (1.0f / 128.0f)) * v->volume_f;
 
+            // this BLEP routine doesn't work properly with multistep per output sample, so
+            // it will have some problems, especially at higher notes and a low output rate.
             if (tempSample_f != bSmp->lastValue)
             {
                 if ((v->lastDelta_f > 0.0f) && (v->lastDelta_f > v->lastFrac_f))
                     blepAdd(bSmp, v->lastFrac_f / v->lastDelta_f, bSmp->lastValue - tempSample_f);
+
                 bSmp->lastValue = tempSample_f;
             }
 
-            if (tempVolume_f != bVol->lastValue)
-            {
-                blepAdd(bVol, 0.0f, bVol->lastValue - tempVolume_f);
-                bVol->lastValue = tempVolume_f;
-            }
-
-            if (bSmp->samplesLeft) tempSample_f += blepRun(bSmp);
-            if (bVol->samplesLeft) tempVolume_f += blepRun(bVol);
-
-            tempSample_f *= tempVolume_f;
+            if (bSmp->samplesLeft)
+                tempSample_f += blepRun(bSmp);
 
             mixBufferL_f[j] += (tempSample_f * v->panL_f);
             mixBufferR_f[j] += (tempSample_f * v->panR_f);
@@ -557,22 +527,22 @@ void pat2SmpMixChannels(int32_t numSamples) // pat2smp needs a multi-step mixer 
             v->frac_f += v->delta_f;
             while (v->frac_f >= 1.0f)
             {
-                fracTrunc  = (int32_t)(v->frac_f);
-                v->phase  += fracTrunc;
-                v->frac_f -= fracTrunc;
+                v->frac_f -= 1.0f;
 
                 v->lastFrac_f  = v->frac_f;
                 v->lastDelta_f = v->delta_f;
 
-                while (v->phase >= v->length)
+                if (++v->phase >= v->length)
                 {
-                    v->phase -= v->length;
+                    v->phase = 0;
 
                     // re-fetch Paula register values now
                     v->length = v->newLength;
                     v->data   = v->newData;
                 }
             }
+
+            // we don't need to insert ending BLEPs anymore with this constantly running mixer
         }
 
         if (mutedVol_f != -1.0f)

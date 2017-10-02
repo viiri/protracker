@@ -2047,7 +2047,7 @@ void handleAskYes(void)
 
             if ((s->loopStart + s->loopLength) < 2)
             {
-                /* fix beep! */
+                // fix beep!
                 modEntry->sampleData[s->offset + 0] = 0;
                 modEntry->sampleData[s->offset + 1] = 0;
             }
