@@ -58,7 +58,7 @@ static uint16_t ch1Pan, ch2Pan, ch3Pan, ch4Pan;
 int32_t samplesPerTick;
 static int32_t sampleCounter, maxSamplesToMix;
 static float *mixBufferL_f, *mixBufferR_f;
-static blep_t blep[AMIGA_VOICES];
+static blep_t blep[AMIGA_VOICES], blepVol[AMIGA_VOICES];
 static lossyIntegrator_t filterLo, filterHi;
 static ledFilterCoeff_t filterLEDC;
 static ledFilter_t filterLED;
@@ -248,11 +248,13 @@ void mixerKillVoice(uint8_t ch)
 
     v->active   = false;
     v->volume_f = 0.0f;
-    sc->active  = false;
-    sc->volume  = 0;
+
+    sc->active = false;
+    sc->volume = 0;
     sc->didSwapData = false;
 
-    memset(&blep[ch], 0, sizeof (blep_t));
+    memset(&blep[ch],    0, sizeof (blep_t));
+    memset(&blepVol[ch], 0, sizeof (blep_t));
 }
 
 void turnOffVoices(void)
@@ -395,8 +397,8 @@ void mixChannels(int32_t numSamples)
     uint8_t i;
     int32_t j;
     volatile float *vuMeter_f;
-    float tempSample_f, mutedVol_f, tmpVol_f;
-    blep_t *bSmp;
+    float tempSample_f, tempVolume_f, mutedVol_f, tmp_f;
+    blep_t *bSmp, *bVol;
     paulaVoice_t *v;
 
     memset(mixBufferL_f, 0, sizeof (float) * numSamples);
@@ -406,7 +408,7 @@ void mixChannels(int32_t numSamples)
     {
         v    = &paula[i];
         bSmp = &blep[i];
-
+        bVol = &blepVol[i];
         vuMeter_f = &editor.realVuMeterVolumes[i];
 
         mutedVol_f = -1.0f;
@@ -422,28 +424,43 @@ void mixChannels(int32_t numSamples)
         {
             dataPtr = v->data;
             if (dataPtr == NULL)
+            {
                 tempSample_f = 0.0f;
+                tempVolume_f = 0.0f;
+            }
             else
-                tempSample_f = (dataPtr[v->phase] * (1.0f / 128.0f)) * v->volume_f;
+            {
+                tempSample_f = dataPtr[v->phase] * (1.0f / 128.0f);
+                tempVolume_f = v->volume_f;
+            }
 
             if (tempSample_f != bSmp->lastValue)
             {
                 if ((v->lastDelta_f > 0.0f) && (v->lastDelta_f > v->lastFrac_f))
                     blepAdd(bSmp, v->lastFrac_f / v->lastDelta_f, bSmp->lastValue - tempSample_f);
-
                 bSmp->lastValue = tempSample_f;
             }
 
-            if (bSmp->samplesLeft)
-                tempSample_f += blepRun(bSmp);
+            if (tempVolume_f != bVol->lastValue)
+            {
+                blepAdd(bVol, 0.0f, bVol->lastValue - tempVolume_f);
+                bVol->lastValue = tempVolume_f;
+            }
 
+            if (bSmp->samplesLeft) tempSample_f += blepRun(bSmp);
+            if (bVol->samplesLeft) tempVolume_f += blepRun(bVol);
+
+            tempSample_f *= tempVolume_f;
+
+            // "real VU meter" mode handling
             if (editor.ui.realVuMeters)
             {
-                tmpVol_f = tempSample_f * 48.0f;
-                tmpVol_f = ABS(tmpVol_f);
-                if (tmpVol_f > *vuMeter_f)
-                    *vuMeter_f = tmpVol_f;
+                tmp_f = tempSample_f * 48.0f;
+                tmp_f = ABS(tmp_f);
+                if (tmp_f > *vuMeter_f)
+                    *vuMeter_f = tmp_f;
             }
+            // ----------------------------
 
             mixBufferL_f[j] += (tempSample_f * v->panL_f);
             mixBufferR_f[j] += (tempSample_f * v->panR_f);
@@ -479,8 +496,8 @@ void pat2SmpMixChannels(int32_t numSamples) // pat2smp needs a multi-step mixer 
     const int8_t *dataPtr;
     uint8_t i;
     int32_t j;
-    float tempSample_f, mutedVol_f;
-    blep_t *bSmp;
+    float tempSample_f, tempVolume_f, mutedVol_f;
+    blep_t *bSmp, *bVol;
     paulaVoice_t *v;
 
     memset(mixBufferL_f, 0, sizeof (float) * numSamples);
@@ -490,6 +507,7 @@ void pat2SmpMixChannels(int32_t numSamples) // pat2smp needs a multi-step mixer 
     {
         v    = &paula[i];
         bSmp = &blep[i];
+        bVol = &blepVol[i];
 
         mutedVol_f = -1.0f;
         if (editor.muted[i])
@@ -504,22 +522,33 @@ void pat2SmpMixChannels(int32_t numSamples) // pat2smp needs a multi-step mixer 
         {
             dataPtr = v->data;
             if (dataPtr == NULL)
+            {
                 tempSample_f = 0.0f;
+                tempVolume_f = 0.0f;
+            }
             else
-                tempSample_f = (dataPtr[v->phase] * (1.0f / 128.0f)) * v->volume_f;
+            {
+                tempSample_f = dataPtr[v->phase] * (1.0f / 128.0f);
+                tempVolume_f = v->volume_f;
+            }
 
-            // this BLEP routine doesn't work properly with multistep per output sample, so
-            // it will have some problems, especially at higher notes and a low output rate.
             if (tempSample_f != bSmp->lastValue)
             {
                 if ((v->lastDelta_f > 0.0f) && (v->lastDelta_f > v->lastFrac_f))
                     blepAdd(bSmp, v->lastFrac_f / v->lastDelta_f, bSmp->lastValue - tempSample_f);
-
                 bSmp->lastValue = tempSample_f;
             }
 
-            if (bSmp->samplesLeft)
-                tempSample_f += blepRun(bSmp);
+            if (tempVolume_f != bVol->lastValue)
+            {
+                blepAdd(bVol, 0.0f, bVol->lastValue - tempVolume_f);
+                bVol->lastValue = tempVolume_f;
+            }
+
+            if (bSmp->samplesLeft) tempSample_f += blepRun(bSmp);
+            if (bVol->samplesLeft) tempVolume_f += blepRun(bVol);
+
+            tempSample_f *= tempVolume_f;
 
             mixBufferL_f[j] += (tempSample_f * v->panL_f);
             mixBufferR_f[j] += (tempSample_f * v->panR_f);
