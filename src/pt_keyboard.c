@@ -1837,40 +1837,51 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
 
         case SDL_SCANCODE_KP_ENTER:
         {
-            editor.sampleZero = false;
-
-            editor.currSample++;
-
-            if (editor.currSample >= 0x10)
+            if (editor.ui.askScreenShown)
             {
-                editor.keypadSampleOffset = 0x00;
+                editor.ui.answerNo       = false;
+                editor.ui.answerYes      = true;
+                editor.ui.askScreenShown = false;
 
-                editor.currSample -= 0x10;
-                if (editor.currSample < 0x01)
-                    editor.currSample = 0x01;
+                handleAskYes();
             }
             else
             {
-                editor.currSample     += 0x10;
-                editor.keypadSampleOffset = 0x10;
+                editor.sampleZero = false;
+
+                editor.currSample++;
+
+                if (editor.currSample >= 0x10)
+                {
+                    editor.keypadSampleOffset = 0x00;
+
+                    editor.currSample -= 0x10;
+                    if (editor.currSample < 0x01)
+                        editor.currSample = 0x01;
+                }
+                else
+                {
+                    editor.currSample     += 0x10;
+                    editor.keypadSampleOffset = 0x10;
+                }
+
+                editor.currSample--;
+
+                updateCurrSample();
+
+                if (input.keyb.leftAltKeyDown && (editor.pNoteFlag > 0))
+                {
+                    editor.ui.changingDrumPadNote = true;
+
+                    setStatusMessage("SELECT NOTE", NO_CARRY);
+                    pointerSetMode(POINTER_MODE_MSG1, NO_CARRY);
+
+                    break;
+                }
+
+                if (editor.pNoteFlag > 0)
+                    handleEditKeys(keyEntry, EDIT_SPECIAL);
             }
-
-            editor.currSample--;
-
-            updateCurrSample();
-
-            if (input.keyb.leftAltKeyDown && (editor.pNoteFlag > 0))
-            {
-                editor.ui.changingDrumPadNote = true;
-
-                setStatusMessage("SELECT NOTE", NO_CARRY);
-                pointerSetMode(POINTER_MODE_MSG1, NO_CARRY);
-
-                break;
-            }
-
-            if (editor.pNoteFlag > 0)
-                handleEditKeys(keyEntry, EDIT_SPECIAL);
         }
         break;
 
@@ -3571,7 +3582,9 @@ void handleKeyRepeat(SDL_Scancode keyEntry)
         }
         break;
 
-        case SDL_SCANCODE_RETURN: break; // do NOT repeat enter!
+        case SDL_SCANCODE_KP_ENTER:
+        case SDL_SCANCODE_RETURN:
+            break; // do NOT repeat enter!
 
         default:
         {
@@ -3904,6 +3917,7 @@ int8_t handleGeneralModes(SDL_Scancode keyEntry)
             // PAT2SMP specific ask dialog
             switch (keyEntry)
             {
+                case SDL_SCANCODE_KP_ENTER:
                 case SDL_SCANCODE_RETURN:
                 case SDL_SCANCODE_H:
                 {
@@ -3960,6 +3974,7 @@ int8_t handleGeneralModes(SDL_Scancode keyEntry)
                 }
                 break;
 
+                case SDL_SCANCODE_KP_ENTER:
                 case SDL_SCANCODE_RETURN:
                 case SDL_SCANCODE_Y:
                 {
