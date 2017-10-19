@@ -2940,7 +2940,7 @@ void toggleFullscreen(void)
 int8_t setupVideo(void)
 {
     int32_t screenW, screenH;
-    uint32_t windowFlags, rendererFlags, textureFormat;
+    uint32_t rendererFlags;
     SDL_DisplayMode dm;
 #ifdef _WIN32
     SDL_SysWMinfo wmInfo;
@@ -2949,13 +2949,7 @@ int8_t setupVideo(void)
     screenW = SCREEN_W * editor.ui.videoScaleFactor;
     screenH = SCREEN_H * editor.ui.videoScaleFactor;
 
-    windowFlags   = 0;
     rendererFlags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE;
-    textureFormat = SDL_PIXELFORMAT_RGB888;
-
-#ifdef __APPLE__
-    textureFormat = SDL_PIXELFORMAT_ARGB8888; // this seems to be slightly faster in OS X / macOS
-#endif
 
 #ifdef _WIN32
 #if SDL_PATCHLEVEL >= 4
@@ -2986,7 +2980,7 @@ int8_t setupVideo(void)
 
     window = SDL_CreateWindow("ProTracker v2.3D", SDL_WINDOWPOS_CENTERED,
                               SDL_WINDOWPOS_CENTERED, screenW, screenH,
-                              windowFlags | SDL_WINDOW_HIDDEN);
+                              SDL_WINDOW_HIDDEN);
     if (window == NULL)
     {
         showErrorMsgBox("Couldn't create SDL window:\n%s", SDL_GetError());
@@ -3034,7 +3028,7 @@ int8_t setupVideo(void)
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 
-    texture = SDL_CreateTexture(renderer, textureFormat, SDL_TEXTUREACCESS_STREAMING, SCREEN_W, SCREEN_H);
+    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, SCREEN_W, SCREEN_H);
     if (texture == NULL)
     {
         showErrorMsgBox("Couldn't create a %dx%d GPU texture:\n" \
