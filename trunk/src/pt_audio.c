@@ -273,6 +273,7 @@ void turnOffVoices(void)
 
 void paulaRestartDMA(uint8_t ch)
 {
+    const int8_t *dat;
     int32_t length;
     paulaVoice_t *v;
     scopeChannel_t *sc;
@@ -280,18 +281,26 @@ void paulaRestartDMA(uint8_t ch)
     v  = &paula[ch];
     sc = &scope[ch];
 
+    dat = v->newData;
+    if (dat == NULL)
+        dat = &modEntry->sampleData[RESERVED_SAMPLE_OFFSET]; // dummy sample
+
     length = v->newLength;
     if (length < 2)
         length = 2;
 
     v->frac_f = 0.0f;
     v->phase  = 0;
-    v->data   = v->newData;
+    v->data   = dat;
     v->length = length;
     v->active = true;
 
+    dat = sc->newData;
+    if (dat == NULL)
+        dat = &modEntry->sampleData[RESERVED_SAMPLE_OFFSET]; // dummy sample
+
     sc->length      = length;
-    sc->data        = sc->newData;
+    sc->data        = dat;
     sc->retriggered = true;
     sc->active      = true;
 }
