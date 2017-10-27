@@ -254,7 +254,7 @@ module_t *modLoad(UNICHAR *fileName)
     int8_t mightBeSTK, numSamples, lateVerSTKFlag;
     uint8_t ppCrunchData[4], bytes[4], *ppBuffer;
     uint8_t *modBuffer, ch, row, pattern;
-    int32_t i, tmp;
+    int32_t i, tmp, loopOverflow;
     uint32_t j, PP20, ppPackLen, ppUnpackLen;
     FILE *fmodule;
     module_t *newModule;
@@ -503,11 +503,19 @@ module_t *modLoad(UNICHAR *fileName)
                 s->fineTune = 0;
             }
 
-            // some modules are broken like this, and the loop should be disabled
-            if ((s->loopStart + s->loopLength) > s->length)
+            // some modules are broken like this, adjust sample length if possible (this is ok if we have room)
+            if ((s->loopLength > 2) && ((s->loopStart + s->loopLength) > s->length))
             {
-                s->loopStart  = 0;
-                s->loopLength = 2;
+                loopOverflow = (s->loopStart + s->loopLength) - s->length;
+                if ((s->length + loopOverflow) <= 131070)
+                {
+                    s->length += loopOverflow; // this is safe, we're calloc()'ing 131070*(31+1) bytes
+                }
+                else
+                {
+                    s->loopStart  = 0;
+                    s->loopLength = 2;
+                }
             }
         }
     }
@@ -763,19 +771,6 @@ module_t *modLoad(UNICHAR *fileName)
         else
         {
             mread(&newModule->sampleData[s->offset], 1, s->length, mod);
-        }
-
-        if ((s->loopLength > 2) && ((s->loopStart + s->loopLength) > s->length)) // fix for overflowing loops (f.ex. MOD.shorttune2)
-        {
-            if ((s->loopStart + s->loopLength) > MAX_SAMPLE_LEN) // not the best solution, but can't be bothered
-            {
-                s->loopStart  = 0;
-                s->loopLength = 2;
-            }
-            else
-            {
-                s->length += ((s->loopStart + s->loopLength) - s->length);
-            }
         }
 
         // fix beeping samples

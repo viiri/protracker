@@ -778,7 +778,7 @@ static void playVoice(moduleChannel_t *ch)
         ch->n_samplenum = note.sample - 1;
         s = &modEntry->samples[ch->n_samplenum];
 
-        ch->n_start = &modEntry->sampleData[s->offset];
+        ch->n_start    = &modEntry->sampleData[s->offset];
         ch->n_finetune = s->fineTune;
         ch->n_volume   = s->volume;
         ch->n_length   = s->length;
@@ -1359,7 +1359,7 @@ void clearSamples(void)
             memset(s->text, 0, sizeof (s->text));
         }
 
-        memset(modEntry->sampleData, 0, MOD_SAMPLES * MAX_SAMPLE_LEN);
+        memset(modEntry->sampleData, 0, (MOD_SAMPLES + 1) * MAX_SAMPLE_LEN);
 
         editor.currSample           = 0;
         editor.keypadSampleOffset   = 0;
