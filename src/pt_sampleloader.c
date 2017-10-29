@@ -38,7 +38,7 @@ static int8_t loadRAWSample(UNICHAR *fileName, char *entryName);
 #if defined (__APPLE__) || defined (_WIN32)
 #define m68000_asr_w_1(x) ((x) >> 1)
 #else
-inline int16_t m68000_asr_w_1(int16_t x)
+static inline int16_t m68000_asr_w_1(int16_t x)
 {
     if (x < 0)
         x = 0x8000 | ((uint16_t)(x) >> 1); // 0x8000 = 2^16 - 2^(16-1)
@@ -53,7 +53,7 @@ inline int16_t m68000_asr_w_1(int16_t x)
 #if defined (__APPLE__) || defined (_WIN32)
 #define m68000_asr_l_1(x) ((x) >> 1)
 #else
-inline int32_t m68000_asr_l_1(int32_t x)
+static inline int32_t m68000_asr_l_1(int32_t x)
 {
     if (x < 0)
         x = 0x80000000 | ((uint32_t)(x) >> 1);  // 0x80000000 = 2^32 - 2^(32-1)

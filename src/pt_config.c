@@ -94,7 +94,7 @@ int8_t loadConfig(void)
         configFileSize = ftell(configFile);
         rewind(configFile);
 
-        configBuffer = (char *)(malloc(configFileSize));
+        configBuffer = (char *)(calloc(configFileSize + 1, 1));
         if (configBuffer == NULL)
         {
             fclose(configFile);
