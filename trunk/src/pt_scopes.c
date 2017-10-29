@@ -23,7 +23,7 @@ extern uint32_t *pixelBuffer; // pt_main.c
 #if defined (__APPLE__) || defined (_WIN32)
 #define m68000_asr_w_8(x) ((x) >> 8)
 #else
-inline int16_t m68000_asr_w_8(int16_t x)
+static inline int16_t m68000_asr_w_8(int16_t x)
 {
     if (x < 0)
         x = 0xFF00 | ((uint16_t)(x) >> 8); // 0xFF80 = 2^16 - 2^(16-9)
