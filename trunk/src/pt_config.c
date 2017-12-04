@@ -64,6 +64,7 @@ int8_t loadConfig(void)
     ptConfig.blankZeroFlag     = false;
     ptConfig.compoMode         = false;
     ptConfig.soundBufferSize   = 1024;
+    ptConfig.vblankScopes      = false;
 
     memset(ptConfig.defaultDiskOpDir, 0, PATH_MAX_LEN + 1);
 
@@ -123,6 +124,13 @@ int8_t loadConfig(void)
             {
                 configBuffer = strtok(NULL, "\n");
                 continue;
+            }
+
+            // VBLANKSCOPES
+            else if (strncmp(configBuffer, "VBLANKSCOPES=", 13) == 0)
+            {
+                     if (strncmp(&configBuffer[13], "TRUE",  4) == 0) ptConfig.vblankScopes = true;
+                else if (strncmp(&configBuffer[13], "FALSE", 5) == 0) ptConfig.vblankScopes = false;
             }
 
             // COMPOMODE
