@@ -233,7 +233,7 @@ int main(int argc, char *argv[])
 
     editor.programRunning = true; // set this before initScopes()
 
-    if (!initScopes())
+    if (!ptConfig.vblankScopes && !initScopes())
     {
         cleanUp();
         SDL_Quit();
@@ -325,6 +325,9 @@ int main(int argc, char *argv[])
         renderFrame();
         renderSprites();
         flipFrame();
+
+        if (ptConfig.vblankScopes)
+            updateScopes();
 
         sinkVisualizerBars();
     }
