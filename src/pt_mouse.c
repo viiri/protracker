@@ -2996,7 +2996,7 @@ int8_t handleRightMouseButton(void)
 
 int8_t handleLeftMouseButton(void)
 {
-    char pat2SmpText[18];
+    char pat2SmpText[24];
     int8_t *ptr8_1, *ptr8_2, *ptr8_3, *ptr8_4;
     int8_t tmpSmp, modTmp, modDat;
     uint8_t i;
