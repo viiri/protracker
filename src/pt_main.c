@@ -718,7 +718,7 @@ static int8_t checkIfAppWasTranslocated(int argc, char **argv)
          "Don't worry, this is normal. To fix the issue you need to move the program/.app somewhere to clear its QTN_FLAG_TRANSLOCATE flag.\n\n" \
          "Instructions:\n" \
          "1) Close the window.\n" \
-         "2) Move/drag (do NOT copy) the program (protracker-osx) to another folder, then move it back to were it was. Don't move the folder, move the executable itself.\n" \
+         "2) Move/drag (do NOT copy) the program (protracker-osx) to another folder, then move it back to where it was. Don't move the folder, move the executable itself.\n" \
          "3) Run the program again, and if you did it right it should be permanently fixed.\n\n" \
          "This is not my fault, it's a security concept introduced in macOS 10.12 for unsigned programs downloaded and unzipped from the internet."
         );

@@ -1333,6 +1333,7 @@ void clearSong(void)
         modSetSpeed(editor.initialSpeed);
 
         setLEDFilter(false); // real PT doesn't do this there, but that's insane
+        updateCurrSample();
 
         editor.ui.updateSongSize = true;
         updateWindowTitle(MOD_IS_MODIFIED);
