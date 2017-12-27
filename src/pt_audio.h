@@ -12,6 +12,8 @@ typedef struct lossyIntegrator_t
     float buffer[2], coeff[2];
 } lossyIntegrator_t;
 
+void resetDitherSeed(void);
+
 void lossyIntegrator(lossyIntegrator_t *filter, float *in, float *out);
 void lossyIntegratorHighPass(lossyIntegrator_t *filter, float *in, float *out);
 

@@ -5717,7 +5717,7 @@ void updateMouseCounters(void)
 
     if (editor.errorMsgActive)
     {
-        if (++editor.errorMsgCounter >= VBLANK_HZ) // one second
+        if (++editor.errorMsgCounter >= (VBLANK_HZ / 2)) // half a second
         {
             editor.errorMsgCounter = 0;
 

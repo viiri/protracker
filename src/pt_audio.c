@@ -29,6 +29,8 @@
 #include "pt_visuals.h"
 #include "pt_scopes.h"
 
+#define INITIAL_DITHER_SEED 0x12345000
+
 // rounded constants to fit in floats
 #define M_PI_F  3.1415927f
 #define M_2PI_F 6.2831855f
@@ -56,7 +58,7 @@ static int8_t amigaPanFlag, defStereoSep = 25, wavRenderingDone;
 int8_t forceMixerOff = false;
 static uint16_t ch1Pan, ch2Pan, ch3Pan, ch4Pan;
 int32_t samplesPerTick;
-static int32_t sampleCounter, maxSamplesToMix;
+static int32_t sampleCounter, maxSamplesToMix, rand32_val = INITIAL_DITHER_SEED;
 static float *mixBufferL_f, *mixBufferR_f;
 static blep_t blep[AMIGA_VOICES], blepVol[AMIGA_VOICES];
 static lossyIntegrator_t filterLo, filterHi;
@@ -267,6 +269,8 @@ void turnOffVoices(void)
     clearLossyIntegrator(&filterLo);
     clearLossyIntegrator(&filterHi);
     clearLEDFilter(&filterLED);
+
+    resetDitherSeed();
 
     editor.tuningFlag = false;
 }
@@ -588,8 +592,24 @@ void pat2SmpMixChannels(int32_t numSamples) // pat2smp needs a multi-step mixer 
     }
 }
 
+void resetDitherSeed(void)
+{
+    rand32_val = INITIAL_DITHER_SEED;
+}
+
+static inline int32_t rand32(void)
+{
+    rand32_val += (rand32_val >> 1) ^ (~(rand32_val & 1U) & 0xD0000001U);
+    rand32_val *= 0xBAAD1337;
+    rand32_val += 0xB00B1351;
+
+    return (rand32_val);
+}
+
 static inline void processMixedSamples(int32_t i, float *out_f, uint8_t mono)
 {
+    float dither;
+
     out_f[0] = mixBufferL_f[i];
     out_f[1] = mixBufferR_f[i];
 
@@ -604,6 +624,16 @@ static inline void processMixedSamples(int32_t i, float *out_f, uint8_t mono)
     // normalize
     out_f[0] *= (32767.0f / AMIGA_VOICES);
     out_f[1] *= (32767.0f / AMIGA_VOICES);
+
+    // apply dithering
+    if (!editor.isSMPRendering)
+    {
+        dither = rand32() * (0.5f / 2147483648.0f); /* signed int32_t max */
+        out_f[0] += dither;
+
+        dither = rand32() * (0.5f / 2147483648.0f); /* signed int32_t max */
+        out_f[1] += dither;
+    }
 
     // clamp
     out_f[0]  = CLAMP(out_f[0], -32768.0f, 32767.0f);
