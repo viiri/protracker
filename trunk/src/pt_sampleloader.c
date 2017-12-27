@@ -996,7 +996,7 @@ int8_t loadIFFSample(UNICHAR *fileName, char *entryName)
     if ((namePtr != 0) && (nameLen > 0))
     {
         fseek(f, namePtr, SEEK_SET);
-        memset(tmpCharBuf, 0, 22);
+        memset(tmpCharBuf, 0, sizeof (tmpCharBuf));
 
         if (nameLen > 21)
         {
@@ -1014,17 +1014,23 @@ int8_t loadIFFSample(UNICHAR *fileName, char *entryName)
     fclose(f);
 
     // copy over sample name
-    memset(s->text, '\0', 23);
+    memset(s->text, '\0', sizeof (s->text));
 
     if (nameFound)
     {
         nameLen = strlen(tmpCharBuf);
+        if (nameLen > 21)
+            nameLen = 21;
+
         for (i = 0; i < nameLen; ++i)
             s->text[i] = toupper(tmpCharBuf[i]);
     }
     else
     {
         nameLen = strlen(entryName);
+        if (nameLen > 21)
+            nameLen = 21;
+
         for (i = 0; i < nameLen; ++i)
             s->text[i] = toupper(entryName[i]);
     }
