@@ -35,6 +35,13 @@
 #define M_PI_F  3.1415927f
 #define M_2PI_F 6.2831855f
 
+/* fast 32-bit -> 16-bit clamp */
+#define CLAMP16(i) \
+{ \
+    if ((int16_t)(i) != i) \
+        i = 0x7FFF ^ (i >> 31); \
+}
+
 typedef struct ledFilter_t
 {
     float led[4];
@@ -599,16 +606,14 @@ void resetDitherSeed(void)
 
 static inline int32_t rand32(void)
 {
-    rand32_val += (rand32_val >> 1) ^ (~(rand32_val & 1U) & 0xD0000001U);
-    rand32_val *= 0xBAAD1337;
-    rand32_val += 0xB00B1351;
-
+    rand32_val = (214013 * rand32_val + 2531011);
     return (rand32_val);
 }
 
-static inline void processMixedSamples(int32_t i, float *out_f, uint8_t mono)
+static inline void processMixedSamples(int32_t i, int16_t *out, uint8_t mono)
 {
-    float dither;
+    int32_t smp32;
+    float out_f[2], dither;
 
     out_f[0] = mixBufferL_f[i];
     out_f[1] = mixBufferR_f[i];
@@ -625,29 +630,28 @@ static inline void processMixedSamples(int32_t i, float *out_f, uint8_t mono)
     out_f[0] *= (32767.0f / AMIGA_VOICES);
     out_f[1] *= (32767.0f / AMIGA_VOICES);
 
-    // apply dithering
-    if (!editor.isSMPRendering)
-    {
-        dither = rand32() * (0.5f / 2147483648.0f); /* signed int32_t max */
-        out_f[0] += dither;
-
-        dither = rand32() * (0.5f / 2147483648.0f); /* signed int32_t max */
-        out_f[1] += dither;
-    }
-
-    // clamp
-    out_f[0]  = CLAMP(out_f[0], -32768.0f, 32767.0f);
-    out_f[1]  = CLAMP(out_f[1], -32768.0f, 32767.0f);
+    // apply 0.5 bit dither
+    dither = rand32() * (0.5f / 2147483648.0f);
+    out_f[0] += dither;
+    dither = rand32() * (0.5f / 2147483648.0f);
+    out_f[1] += dither;
 
     if (mono)
         out_f[0] = (out_f[0] / 2.0f) + (out_f[1] / 2.0f);
+
+    smp32 = (int32_t)(out_f[0]); // should use fast SSE
+    CLAMP16(smp32);              // fast clamp
+    out[0] = (int16_t)(smp32);
+
+    smp32 = (int32_t)(out_f[1]); // should use fast SSE
+    CLAMP16(smp32);              // fast clamp
+    out[1] = (int16_t)(smp32);
 }
 
 void outputAudio(int16_t *target, int32_t numSamples)
 {
-    int16_t *outStream, smpL, smpR;
+    int16_t *outStream, out[2];
     int32_t j;
-    float out_f[2];
 
     outStream = target;
     if (editor.isWAVRendering)
@@ -656,19 +660,16 @@ void outputAudio(int16_t *target, int32_t numSamples)
         mixChannels(numSamples);
         for (j = 0; j < numSamples; ++j)
         {
-            processMixedSamples(j, out_f, false);
-
-            smpL = (int16_t)(out_f[0]);
-            smpR = (int16_t)(out_f[1]);
+            processMixedSamples(j, out, false);
 
             if (bigEndian)
             {
-                smpL = SWAP16(smpL);
-                smpR = SWAP16(smpR);
+                out[0] = SWAP16(out[0]);
+                out[1] = SWAP16(out[1]);
             }
 
-            *outStream++ = smpL;
-            *outStream++ = smpR;
+            *outStream++ = out[0];
+            *outStream++ = out[1];
         }
     }
     else if (editor.isSMPRendering)
@@ -677,8 +678,7 @@ void outputAudio(int16_t *target, int32_t numSamples)
         pat2SmpMixChannels(numSamples);
         for (j = 0; j < numSamples; ++j)
         {
-            processMixedSamples(j, out_f, true); // mono
-            smpL = (int16_t)(out_f[0]);
+            processMixedSamples(j, out, true); // mono
 
             if (editor.pat2SmpPos >= MAX_SAMPLE_LEN)
             {
@@ -687,7 +687,7 @@ void outputAudio(int16_t *target, int32_t numSamples)
             }
             else
             {
-                editor.pat2SmpBuf[editor.pat2SmpPos++] = smpL;
+                editor.pat2SmpBuf[editor.pat2SmpPos++] = out[0]; // out[0] is already mixed with out[1]
             }
         }
     }
@@ -697,13 +697,10 @@ void outputAudio(int16_t *target, int32_t numSamples)
         mixChannels(numSamples);
         for (j = 0; j < numSamples; ++j)
         {
-            processMixedSamples(j, out_f, false);
+            processMixedSamples(j, out, false);
 
-            smpL = (int16_t)(out_f[0]);
-            smpR = (int16_t)(out_f[1]);
-
-            *outStream++ = smpL;
-            *outStream++ = smpR;
+            *outStream++ = out[0];
+            *outStream++ = out[1];
         }
     }
 }
