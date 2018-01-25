@@ -65,6 +65,7 @@ int8_t loadConfig(void)
     ptConfig.compoMode         = false;
     ptConfig.soundBufferSize   = 1024;
     ptConfig.vblankScopes      = false;
+    ptConfig.autoCloseDiskOp   = true;
 
     memset(ptConfig.defaultDiskOpDir, 0, PATH_MAX_LEN + 1);
 
@@ -124,6 +125,13 @@ int8_t loadConfig(void)
             {
                 configBuffer = strtok(NULL, "\n");
                 continue;
+            }
+
+            // AUTOCLOSEDISKOP
+            else if (strncmp(configBuffer, "AUTOCLOSEDISKOP=", 16) == 0)
+            {
+                     if (strncmp(&configBuffer[16], "TRUE",  4) == 0) ptConfig.autoCloseDiskOp = true;
+                else if (strncmp(&configBuffer[16], "FALSE", 5) == 0) ptConfig.autoCloseDiskOp = false;
             }
 
             // VBLANKSCOPES

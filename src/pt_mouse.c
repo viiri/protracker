@@ -1802,7 +1802,9 @@ void diskOpLoadFile(uint32_t fileEntryRow)
                     pointerSetMode(POINTER_MODE_IDLE, DO_CARRY);
                     setStatusMessage(editor.allRightText, DO_CARRY);
 
-                    editor.ui.diskOpScreenShown = false;
+                    if (ptConfig.autoCloseDiskOp)
+                        editor.ui.diskOpScreenShown = false;
+
                     displayMainScreen();
                 }
                 else
