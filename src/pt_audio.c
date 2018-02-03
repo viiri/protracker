@@ -403,10 +403,6 @@ void toggleLowPassFilter(void)
         filterFlags |= FILTER_LP_ENABLED;
         clearLossyIntegrator(&filterLo);
 
-        editor.errorMsgActive  = true;
-        editor.errorMsgBlock   = false;
-        editor.errorMsgCounter = 24; // medium short flash
-
         displayMsg("FILTER MOD: A500");
     }
 }
@@ -945,22 +941,12 @@ void toggleAmigaPanMode(void)
     if (!amigaPanFlag)
     {
         mixerCalcVoicePans(defStereoSep);
-
-        editor.errorMsgActive  = true;
-        editor.errorMsgBlock   = false;
-        editor.errorMsgCounter = 24; // medium short flash
-
-        setStatusMessage("AMIGA PANNING OFF", NO_CARRY);
+        displayMsg("AMIGA PANNING OFF");
     }
     else
     {
         mixerCalcVoicePans(100);
-
-        editor.errorMsgActive  = true;
-        editor.errorMsgBlock   = false;
-        editor.errorMsgCounter = 24; // medium short flash
-
-        setStatusMessage("AMIGA PANNING ON", NO_CARRY);
+        displayMsg("AMIGA PANNING ON");
     }
 }
 

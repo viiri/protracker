@@ -990,7 +990,7 @@ static void loadDroppedFile(char *fullPath, uint32_t fullPathLen, uint8_t autoPl
             modEntry->moduleLoaded = true;
 
             resetAllScreens();
-            setStatusMessage("ALL RIGHT", DO_CARRY);
+            setStatusMessage(editor.allRightText, DO_CARRY);
             pointerSetMode(POINTER_MODE_IDLE, DO_CARRY);
 
             editor.ui.diskOpScreenShown = false;
