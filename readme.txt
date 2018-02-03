@@ -25,8 +25,7 @@ Compiled binaries are always available at https://www.16-bits.org/
  2. You need Visual Studio 2015 or newer ('Community' version is free)
  3. Wait patiently while you install it. VS2017: install the Desktop pkg.
  4. Download and copy over the SDL2 development files from libsdl.org.
- 5. Open pt-clone.sln found in pt-clone-code\vs2015_project
-    (will be converted if using a newer Visual Studio)
+ 5. Open pt-clone.sln found in pt-clone-code\vs201x_project (x = 5 or 7)
  6. Make sure it's in 'release mode' and press F7 to compile the program
  7. Done! The binary ('protracker.exe') is now in pt-clone-code\release\
   
