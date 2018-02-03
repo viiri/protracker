@@ -1,4 +1,4 @@
-Compiled binaries are always available at http://www.16-bits.org/
+Compiled binaries are always available at https://www.16-bits.org/
 
 == COMPILING PROTRACKER ON WINDOWS VISTA OR NEWER ==
  1. Use an SVN client to download the code, using this as input:
@@ -18,7 +18,7 @@ Compiled binaries are always available at http://www.16-bits.org/
      (+ Command Line Tools package) from
      https://developer.apple.com/xcode/downloads/
  2. Download the SDL2 Runtime Libraries for Mac OS X here:
-    Intel OS X 10.6 and up: https://www.libsdl.org/release/SDL2-2.0.5.dmg
+    Intel OS X 10.6 and up: https://www.libsdl.org/release/SDL2-2.0.7.dmg
  3. Inside the downloaded image you'll find SDL2.framework, copy that folder
      to /Library/Frameworks
  4. Open the Terminal (Applications/Utilities/Terminal) and run the following:
@@ -30,7 +30,7 @@ Compiled binaries are always available at http://www.16-bits.org/
  6. The correct config file location is '~/.protracker/protracker.ini'.
  
 == COMPILING PROTRACKER ON LINUX ==
- 1. Install 'subversion' and 'libsdl2-dev' (sdl2 v2.0.5 recommended)
+ 1. Install 'subversion' and 'libsdl2-dev' (sdl2 v2.0.7 or later recommended)
  2. Open a terminal and run the following:
      svn checkout svn://svn.code.sf.net/p/protracker/code/trunk pt-clone-code
      cd pt-clone-code
