@@ -5689,16 +5689,7 @@ int8_t handleLeftMouseButton(void)
                 }
                 break;
 
-                default: // button not mapped
-                {
-                    editor.errorMsgActive  = true;
-                    editor.errorMsgBlock   = true;
-                    editor.errorMsgCounter = 0;
-
-                    pointerErrorMode();
-                    setStatusMessage("NOT IMPLEMENTED", NO_CARRY);
-                }
-                break;
+                default: displayErrorMsg("NOT IMPLEMENTED"); break; // button not mapped
             }
         }
     }
@@ -5710,7 +5701,7 @@ void updateMouseCounters(void)
 {
     if (input.mouse.buttonWaiting)
     {
-        if (++input.mouse.buttonWaitCounter > (VBLANK_HZ / 4)) // 4th of a second
+        if (++input.mouse.buttonWaitCounter > (VBLANK_HZ / 4)) // quarter of a second
         {
             input.mouse.buttonWaitCounter = 0;
             input.mouse.buttonWaiting = false;
@@ -5719,7 +5710,7 @@ void updateMouseCounters(void)
 
     if (editor.errorMsgActive)
     {
-        if (++editor.errorMsgCounter >= (VBLANK_HZ / 2)) // half a second
+        if (++editor.errorMsgCounter >= (uint8_t)(VBLANK_HZ / 1.8))
         {
             editor.errorMsgCounter = 0;
 

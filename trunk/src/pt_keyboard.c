@@ -1070,12 +1070,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             if (input.keyb.shiftKeyDown)
             {
                 editor.f6Pos = modEntry->currRow;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("POSITION SET", NO_CARRY);
+                displayMsg("POSITION SET");
             }
             else
             {
@@ -1122,12 +1117,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             if (input.keyb.shiftKeyDown)
             {
                 editor.f7Pos = modEntry->currRow;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("POSITION SET", NO_CARRY);
+                displayMsg("POSITION SET");
             }
             else
             {
@@ -1174,12 +1164,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             if (input.keyb.shiftKeyDown)
             {
                 editor.f8Pos = modEntry->currRow;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("POSITION SET", NO_CARRY);
+                displayMsg("POSITION SET");
             }
             else
             {
@@ -1226,12 +1211,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             if (input.keyb.shiftKeyDown)
             {
                 editor.f9Pos = modEntry->currRow;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("POSITION SET", NO_CARRY);
+                displayMsg("POSITION SET");
             }
             else
             {
@@ -1278,12 +1258,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             if (input.keyb.shiftKeyDown)
             {
                 editor.f10Pos = modEntry->currRow;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("POSITION SET", NO_CARRY);
+                displayMsg("POSITION SET");
             }
             else
             {
@@ -1352,12 +1327,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             if (input.keyb.leftCtrlKeyDown)
             {
                 editor.editMoveAdd = 0;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("EDITSKIP = 0", NO_CARRY);
+                displayMsg("EDITSKIP = 0");
                 editor.ui.updateTrackerFlags = true;
             }
             else if (input.keyb.shiftKeyDown)
@@ -1383,12 +1353,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             else if (input.keyb.leftCtrlKeyDown)
             {
                 editor.editMoveAdd = 1;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("EDITSKIP = 1", NO_CARRY);
+                displayMsg("EDITSKIP = 1");
                 editor.ui.updateTrackerFlags = true;
             }
             else if (input.keyb.shiftKeyDown)
@@ -1414,12 +1379,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             else if (input.keyb.leftCtrlKeyDown)
             {
                 editor.editMoveAdd = 2;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("EDITSKIP = 2", NO_CARRY);
+                displayMsg("EDITSKIP = 2");
                 editor.ui.updateTrackerFlags = true;
             }
             else if (input.keyb.shiftKeyDown)
@@ -1445,12 +1405,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             else if (input.keyb.leftCtrlKeyDown)
             {
                 editor.editMoveAdd = 3;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("EDITSKIP = 3", NO_CARRY);
+                displayMsg("EDITSKIP = 3");
                 editor.ui.updateTrackerFlags = true;
             }
             else if (input.keyb.shiftKeyDown)
@@ -1476,12 +1431,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             else if (input.keyb.leftCtrlKeyDown)
             {
                 editor.editMoveAdd = 4;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("EDITSKIP = 4", NO_CARRY);
+                displayMsg("EDITSKIP = 4");
                 editor.ui.updateTrackerFlags = true;
             }
             else if (input.keyb.shiftKeyDown)
@@ -1503,12 +1453,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             if (input.keyb.leftCtrlKeyDown)
             {
                 editor.editMoveAdd = 5;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("EDITSKIP = 5", NO_CARRY);
+                displayMsg("EDITSKIP = 5");
                 editor.ui.updateTrackerFlags = true;
             }
             else if (input.keyb.shiftKeyDown)
@@ -1530,12 +1475,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             if (input.keyb.leftCtrlKeyDown)
             {
                 editor.editMoveAdd = 6;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("EDITSKIP = 6", NO_CARRY);
+                displayMsg("EDITSKIP = 6");
                 editor.ui.updateTrackerFlags = true;
             }
             else if (input.keyb.shiftKeyDown)
@@ -1557,12 +1497,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             if (input.keyb.leftCtrlKeyDown)
             {
                 editor.editMoveAdd = 7;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("EDITSKIP = 7", NO_CARRY);
+                displayMsg("EDITSKIP = 7");
                 editor.ui.updateTrackerFlags = true;
             }
             else if (input.keyb.shiftKeyDown)
@@ -1584,12 +1519,7 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             if (input.keyb.leftCtrlKeyDown)
             {
                 editor.editMoveAdd = 8;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
-
-                setStatusMessage("EDITSKIP = 8", NO_CARRY);
+                displayMsg("EDITSKIP = 8");
                 editor.ui.updateTrackerFlags = true;
             }
             else if (input.keyb.shiftKeyDown)
@@ -1611,10 +1541,8 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
             if (input.keyb.leftCtrlKeyDown)
             {
                 editor.editMoveAdd = 9;
-
-                editor.errorMsgActive  = true;
-                editor.errorMsgBlock   = false;
-                editor.errorMsgCounter = 32; // short flash
+                displayMsg("EDITSKIP = 9");
+                editor.ui.updateTrackerFlags = true;
             }
             else if (input.keyb.shiftKeyDown)
             {
