@@ -34,6 +34,17 @@
     (((uint32_t)((value) & 0xFF000000)) >> 24)   \
 )
 
+/* arithmetic shift right on signed variables macros (works properly on all platforms, though not branchless...) */
+#if defined (__APPLE__) || defined (_WIN32)
+#define  SAR8(x, n) ((x) >> (n))
+#define SAR16(x, n) ((x) >> (n))
+#define SAR32_1(x)  ((x) >>  1 )
+#else
+#define  SAR8(x, n) ((x) >= 0) ? ((x) >> (n)) : (((1 <<  8) - (1 << (8  - (n)))) | ((x) >> (n)))
+#define SAR16(x, n) ((x) >= 0) ? ((x) >> (n)) : (((1 << 16) - (1 << (16 - (n)))) | ((x) >> (n)))
+#define SAR32_1(x)  ((x) >= 0) ? ((x) >>  1 ) : (0x80000000 | ((x) >> 1))
+#endif
+
 #define SGN(x) (((x) >= 0) ? 1 : -1)
 #define ABS(a) (((a) < 0) ? -(a) : (a))
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))

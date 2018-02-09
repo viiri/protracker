@@ -2711,7 +2711,7 @@ int32_t checkGUIButtons(void)
 void handleTextEditing(uint8_t mouseButton)
 {
     char *tmpRead;
-    int32_t tmp32;
+    int16_t tmp16;
 
     // handle mouse while editing text/numbers
     if (editor.ui.editTextFlag)
@@ -2723,20 +2723,15 @@ void handleTextEditing(uint8_t mouseButton)
         }
         else if ((mouseButton == SDL_BUTTON_LEFT) && !editor.mixFlag)
         {
-            tmp32 = input.mouse.y - editor.ui.lineCurY;
-            if ((tmp32 <= 2) && (tmp32 >= -9))
+            tmp16 = input.mouse.y - editor.ui.lineCurY;
+            if ((tmp16 <= 2) && (tmp16 >= -9))
             {
-                tmp32 = (input.mouse.x - editor.ui.lineCurX) + 4;
+                tmp16 = (input.mouse.x - editor.ui.lineCurX) + 4;
+                tmp16 = SAR16(tmp16, 3);
 
-                // 68k simulation on signed number: ASR.L #3,D1
-                if (tmp32 < 0)
-                    tmp32 = 0xE0000000 | ((uint32_t)(tmp32) >> 3); // 0xE0000000 = 2^32 - 2^(32-3)
-                else
-                    tmp32 /= (1 << 3);
-
-                while (tmp32 != 0) // 0 = pos we want
+                while (tmp16 != 0) // 0 = pos we want
                 {
-                    if (tmp32 > 0)
+                    if (tmp16 > 0)
                     {
                         if (editor.ui.editPos < editor.ui.textEndPtr)
                         {
@@ -2747,9 +2742,9 @@ void handleTextEditing(uint8_t mouseButton)
                             }
                         }
 
-                        tmp32--;
+                        tmp16--;
                     }
-                    else if (tmp32 < 0)
+                    else if (tmp16 < 0)
                     {
                         if (editor.ui.editPos > editor.ui.dstPtr)
                         {
@@ -2757,7 +2752,7 @@ void handleTextEditing(uint8_t mouseButton)
                             textMarkerMoveLeft();
                         }
 
-                        tmp32++;
+                        tmp16++;
                     }
                 }
             }

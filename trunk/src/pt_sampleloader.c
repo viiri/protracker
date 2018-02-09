@@ -34,36 +34,6 @@ static int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDown
 static int8_t loadIFFSample(UNICHAR *fileName, char *entryName);
 static int8_t loadRAWSample(UNICHAR *fileName, char *entryName);
 
-// 16-bit arithmetic shift right by 1
-#if defined (__APPLE__) || defined (_WIN32)
-#define m68000_asr_w_1(x) ((x) >> 1)
-#else
-static inline int16_t m68000_asr_w_1(int16_t x)
-{
-    if (x < 0)
-        x = 0x8000 | ((uint16_t)(x) >> 1); // 0x8000 = 2^16 - 2^(16-1)
-    else
-        x >>= 1;
-
-    return (x);
-}
-#endif
-
-// 32-bit arithmetic shift right by 1
-#if defined (__APPLE__) || defined (_WIN32)
-#define m68000_asr_l_1(x) ((x) >> 1)
-#else
-static inline int32_t m68000_asr_l_1(int32_t x)
-{
-    if (x < 0)
-        x = 0x80000000 | ((uint32_t)(x) >> 1);  // 0x80000000 = 2^32 - 2^(32-1)
-    else
-        x >>= 1;
-
-    return (x);
-}
-#endif
-
 void extLoadWAVSampleCallback(int8_t downsample)
 {
     loadWAVSample(editor.fileNameTmp, editor.entryNameTmp, downsample);
@@ -343,7 +313,7 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
             for (i = 0; i < (sampleLength - 1); i++)
             {
                 smp16 = (audioDataU8[(i * 2) + 0] - 128) + (audioDataU8[(i * 2) + 1] - 128);
-                smp16 = 128 + m68000_asr_w_1(smp16);
+                smp16 = 128 + SAR16(smp16, 1);
 
                 audioDataU8[i] = (uint8_t)(smp16);
             }
@@ -414,7 +384,7 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
             for (i = 0; i < (sampleLength - 1); i++)
             {
                 smp32 = audioDataS16[(i * 2) + 0] + audioDataS16[(i * 2) + 1];
-                smp32 = m68000_asr_l_1(smp32);
+                smp32 = SAR32_1(smp32);
 
                 audioDataS16[i] = (int16_t)(smp32);
             }
@@ -487,8 +457,8 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
                 smp32_l = audioDataS32[(i * 2) + 0];
                 smp32_r = audioDataS32[(i * 2) + 1];
 
-                smp32_l = m68000_asr_l_1(smp32_l);
-                smp32_r = m68000_asr_l_1(smp32_r);
+                smp32_l = SAR32_1(smp32_l);
+                smp32_r = SAR32_1(smp32_r);
 
                 audioDataS32[i] = smp32_l + smp32_r;
             }
@@ -563,8 +533,8 @@ int8_t loadWAVSample(UNICHAR *fileName, char *entryName, int8_t forceDownSamplin
                 smp32_l = audioDataS32[(i * 2) + 0];
                 smp32_r = audioDataS32[(i * 2) + 1];
 
-                smp32_l = m68000_asr_l_1(smp32_l);
-                smp32_r = m68000_asr_l_1(smp32_r);
+                smp32_l = SAR32_1(smp32_l);
+                smp32_r = SAR32_1(smp32_r);
 
                 audioDataS32[i] = smp32_l + smp32_r;
             }
