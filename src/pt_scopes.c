@@ -19,21 +19,6 @@ static uint64_t timeNext64;
 extern int8_t forceMixerOff;  // pt_audio.c
 extern uint32_t *pixelBuffer; // pt_main.c
 
-// 16-bit arithmetic shift right by 8
-#if defined (__APPLE__) || defined (_WIN32)
-#define m68000_asr_w_8(x) ((x) >> 8)
-#else
-static inline int16_t m68000_asr_w_8(int16_t x)
-{
-    if (x < 0)
-        x = 0xFF00 | ((uint16_t)(x) >> 8); // 0xFF80 = 2^16 - 2^(16-9)
-    else
-        x >>= 8;
-
-    return (x);
-}
-#endif
-
 void updateScopes(void)
 {
     uint8_t i;
@@ -176,7 +161,7 @@ void drawScopes(void)
                         }
 
                         scopeData = readPtr[readPos++] * volume;
-                        scopeData = m68000_asr_w_8(scopeData);
+                        scopeData = SAR16(scopeData, 8);
 
                         scopePtr[(scopeData * SCREEN_W) + x] = scopePixel;
 
@@ -190,7 +175,7 @@ void drawScopes(void)
                         if (readPos < dataLen)
                         {
                             scopeData = readPtr[readPos++] * volume;
-                            scopeData = m68000_asr_w_8(scopeData);
+                            scopeData = SAR16(scopeData, 8);
                         }
 
                         scopePtr[(scopeData * SCREEN_W) + x] = scopePixel;

@@ -24,21 +24,6 @@
 
 extern uint32_t *pixelBuffer; // pt_main.c
 
-// 8-bit arithmetic shift right by 2
-#if defined (__APPLE__) || defined (_WIN32)
-#define m68000_asr_b_2(x) ((x) >> 2)
-#else
-static inline int8_t m68000_asr_b_2(int8_t x)
-{
-    if (x < 0)
-        x = 0xC0 | ((uint8_t)(x) >> 2); // 0xC0 = 2^8 - 2^(8-2)
-    else
-        x >>= 2;
-
-    return (x);
-}
-#endif
-
 typedef struct sampleMixer_t
 {
     int32_t length, index;
@@ -216,7 +201,7 @@ static int8_t getScaledSample(int32_t index)
         return (0);
 
     smp = ptr8[index];
-    smp = m68000_asr_b_2(smp);
+    smp = SAR8(smp, 2);
 
     return (smp);
 }
@@ -267,8 +252,8 @@ static void getSampleDataPeak(int8_t *smpPtr, int32_t numBytes, int16_t *outMin,
         if (smp > max) max = smp;
     }
 
-    min = m68000_asr_b_2(min);
-    max = m68000_asr_b_2(max);
+    min = SAR8(min, 2);
+    max = SAR8(max, 2);
 
     *outMin = SAMPLE_AREA_Y_CENTER - min;
     *outMax = SAMPLE_AREA_Y_CENTER - max;
