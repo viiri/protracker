@@ -76,8 +76,8 @@ static void loadModFromArg(char *arg);
 static void handleSigTerm(void);
 static void loadDroppedFile(char *fullPath, uint32_t fullPathLen, uint8_t autoPlay);
 static void cleanUp(void);
-static void initSyncMainThread(void);
-static void syncMainThread(void);
+static void setupWaitVBL(void);
+static void waitVBL(void);
 static void readMouseXY(void);
 
 int main(int argc, char *argv[])
@@ -120,7 +120,7 @@ int main(int argc, char *argv[])
         return (0);
     }
 
-    /* disable problematic WASAPI SDL2 audio driver on Windows */
+    // disable problematic WASAPI SDL2 audio driver on Windows
 #ifdef _WIN32
     SDL_setenv("SDL_AUDIODRIVER", "directsound", true);
 #endif
@@ -308,12 +308,10 @@ int main(int argc, char *argv[])
 
     SDL_ShowWindow(window);
 
-    initSyncMainThread();
+    setupWaitVBL();
     while (editor.programRunning)
     {
-        syncMainThread();
         readMouseXY();
-        eraseSprites();
         updateKeyModifiers(); // set/clear CTRL/ALT/SHIFT/AMIGA key states
         handleInput();
         updateMouseCounters();
@@ -328,13 +326,14 @@ int main(int argc, char *argv[])
         }
 
         renderFrame();
-        renderSprites();
         flipFrame();
 
         if (ptConfig.vblankScopes)
             updateScopes();
 
         sinkVisualizerBars();
+
+        waitVBL(); // if our display rate is higher than 60Hz, make sure we still sync to 60Hz (or if we disabled vblank)
     }
 
     cleanUp();
@@ -1057,41 +1056,48 @@ static void cleanUp(void) // never call this inside the main loop!
 #endif
 }
 
-static void initSyncMainThread(void)
+static void setupWaitVBL(void)
 {
-    double perfFreq_f, frameLength_f;
+    int32_t time32;
+    double time_f;
 
-    perfFreq_f    = (double)(SDL_GetPerformanceFrequency());
-    frameLength_f = (perfFreq_f / VBLANK_HZ) + 0.5;
-    timeNext64    = SDL_GetPerformanceCounter() + (int32_t)(frameLength_f);
+    // setup next frame time
+    time_f     = ((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5;
+    time32     = (int32_t)(time_f);
+    timeNext64 = SDL_GetPerformanceCounter() + time32;
 }
 
-static void syncMainThread(void)
+static void waitVBL(void)
 {
     // this routine almost never delays if we have 60Hz vsync, but it's still needed for safety
 
-    int32_t delayMs;
-    uint64_t timeNow64, timeElapsed64;
-    double delayMs_f, perfFreq_f, frameLength_f;
+    int32_t time32;
+    uint64_t time64;
+    double time_f, perfFreq_f;
 
     perfFreq_f = (double)(SDL_GetPerformanceFrequency()); // should be safe for double
     if (perfFreq_f <= 0.0)
         return; // panic!
 
-    timeNow64 = SDL_GetPerformanceCounter();
-    if (timeNext64 > timeNow64)
+    time64 = SDL_GetPerformanceCounter();
+    if (time64 < timeNext64)
     {
-        timeElapsed64 = timeNext64 - timeNow64;
+        // calculate time remaining until next frame
+        time64 = timeNext64 - time64;
 
-        delayMs_f = ((1000.0 * (double)(timeElapsed64)) / perfFreq_f) + 0.5;
-        delayMs   = (int32_t)(delayMs_f);
+        // convert to milliseconds
+        time_f = ((1000.0 * (double)(time64)) / perfFreq_f) + 0.5;
+        time32 = (int32_t)(time_f);
 
-        if (delayMs > 0)
-            SDL_Delay(delayMs);
+        // delay until we reach next frame
+        if (time32 > 0)
+            SDL_Delay(time32);
     }
 
-    frameLength_f = (perfFreq_f / VBLANK_HZ) + 0.5;
-    timeNext64   += (int32_t)(frameLength_f);
+    // setup next frame time
+    time_f      = (perfFreq_f / VBLANK_HZ) + 0.5;
+    time32      = (int32_t)(time_f);
+    timeNext64 += time32;
 }
 
 static void readMouseXY(void)

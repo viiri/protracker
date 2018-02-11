@@ -34,7 +34,7 @@
     (((uint32_t)((value) & 0xFF000000)) >> 24)   \
 )
 
-/* arithmetic shift right on signed variables macros (works properly on all platforms, though not branchless...) */
+// arithmetic shift right on signed variables macros (works properly on all platforms, though not branchless...)
 #if defined (__APPLE__) || defined (_WIN32)
 #define  SAR8(x, n) ((x) >> (n))
 #define SAR16(x, n) ((x) >> (n))

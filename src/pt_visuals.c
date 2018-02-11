@@ -2814,11 +2814,15 @@ void renderSprites(void)
 
 void flipFrame(void)
 {
+    renderSprites();
+
     SDL_UpdateTexture(texture, NULL, pixelBuffer, SCREEN_W * sizeof (int32_t));
 
     SDL_RenderClear(renderer);
     SDL_RenderCopy(renderer, texture, NULL, NULL);
     SDL_RenderPresent(renderer);
+
+    eraseSprites();
 }
 
 void updateSpectrumAnalyzer(uint8_t ch, int8_t vol, int16_t period)

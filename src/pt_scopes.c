@@ -268,50 +268,44 @@ void drawScopes(void)
     }
 }
 
-static void initSyncMainThread(void)
-{
-    double perfFreq_f, frameLength_f;
-
-    perfFreq_f    = (double)(SDL_GetPerformanceFrequency());
-    frameLength_f = (perfFreq_f / VBLANK_HZ) + 0.5;
-    timeNext64    = SDL_GetPerformanceCounter() + (int32_t)(frameLength_f);
-}
-
-static void syncScopeThread(void)
-{
-    int32_t delayMs;
-    uint64_t timeNow64, timeElapsed64;
-    double delayMs_f, perfFreq_f, frameLength_f;
-
-    perfFreq_f = (double)(SDL_GetPerformanceFrequency()); // should be safe for double
-    if (perfFreq_f <= 0.0)
-        return; // panic!
-
-    timeNow64 = SDL_GetPerformanceCounter();
-    if (timeNext64 > timeNow64)
-    {
-        timeElapsed64 = timeNext64 - timeNow64;
-
-        delayMs_f = ((1000.0 * (double)(timeElapsed64)) / perfFreq_f) + 0.5;
-        delayMs   = (int32_t)(delayMs_f);
-
-        if (delayMs > 0)
-            SDL_Delay(delayMs);
-    }
-
-    frameLength_f = (perfFreq_f / VBLANK_HZ) + 0.5;
-    timeNext64   += (int32_t)(frameLength_f);
-}
-
 int32_t scopeThreadFunc(void *ptr)
 {
+    int32_t time32;
+    uint64_t time64;
+    double time_f, perfFreq_f;
+
     (void)(ptr);
 
     SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
     while (editor.programRunning)
     {
-        syncScopeThread();
         updateScopes();
+
+        // sync scopes to 60Hz
+
+        perfFreq_f = (double)(SDL_GetPerformanceFrequency()); // should be safe for double
+        if (perfFreq_f <= 0.0)
+            continue; // panic!
+
+        time64 = SDL_GetPerformanceCounter();
+        if (time64 < timeNext64)
+        {
+            // calculate time remaining until next frame
+            time64 = timeNext64 - time64;
+
+            // convert to milliseconds
+            time_f = ((1000.0 * (double)(time64)) / perfFreq_f) + 0.5;
+            time32 = (int32_t)(time_f);
+
+            // delay until we reach next frame
+            if (time32 > 0)
+                SDL_Delay(time32);
+        }
+
+        // setup next frame time
+        time_f      = (perfFreq_f / VBLANK_HZ) + 0.5;
+        time32      = (int32_t)(time_f);
+        timeNext64 += time32;
     }
 
     return (true);
@@ -319,7 +313,13 @@ int32_t scopeThreadFunc(void *ptr)
 
 uint8_t initScopes(void)
 {
-    initSyncMainThread();
+    int32_t time32;
+    double time_f;
+
+    // setup next frame time
+    time_f     = ((double)(SDL_GetPerformanceFrequency()) / VBLANK_HZ) + 0.5;
+    time32     = (int32_t)(time_f);
+    timeNext64 = SDL_GetPerformanceCounter() + time32;
 
     scopeThread = SDL_CreateThread(scopeThreadFunc, "PT Clone Scope Thread", NULL);
     if (scopeThread == NULL)
