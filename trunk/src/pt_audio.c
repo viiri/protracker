@@ -35,7 +35,7 @@
 #define M_PI_F  3.1415927f
 #define M_2PI_F 6.2831855f
 
-/* fast 32-bit -> 16-bit clamp */
+// fast 32-bit -> 16-bit clamp
 #define CLAMP16(i) \
 { \
     if ((int16_t)(i) != i) \
