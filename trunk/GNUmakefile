@@ -17,7 +17,7 @@ USER = $(shell whoami)
 
 $(TARGET): $(SOURCE)
 	@echo "Compiling, please wait..."
-	gcc  $(SOURCE) -lSDL2 -lm -ldl $(WARNINGS) -march=native -mtune=native -O3 -o $(TARGET)
+	gcc  $(SOURCE) -lSDL2 -lm $(WARNINGS) -march=native -mtune=native -O3 -o $(TARGET)
 	@echo "Done! The binary (protracker) is in the folder named 'release'."
 	@echo "To run it, type ./protracker in the release folder (or type make run)."
 
