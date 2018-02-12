@@ -406,6 +406,11 @@ void keyDownHandler(SDL_Scancode keyEntry, SDL_Keycode keyCode)
     if (!input.keyb.leftAltKeyDown && (keyEntry == SDL_SCANCODE_F11))
     {
         toggleFullscreen();
+
+        /* hack for a bug in certain SDL2 Linux ports */
+#ifdef __unix__
+        SDL_Delay(150);
+#endif
         return;
     }
 
