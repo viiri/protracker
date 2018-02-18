@@ -238,12 +238,13 @@ int32_t scr2SmpPos(int32_t x) // screen x pos -> sample pos
 
 static void getSampleDataPeak(int8_t *smpPtr, int32_t numBytes, int16_t *outMin, int16_t *outMax)
 {
-    int8_t smp;
-    int16_t min, max;
+    int8_t smp, min, max;
     int32_t i;
 
     min =  127;
     max = -128;
+
+    // this compiles into *fast* SSE min/max instructions (at least with Visual Studio 2017)
 
     for (i = 0; i < numBytes; ++i)
     {
@@ -252,11 +253,8 @@ static void getSampleDataPeak(int8_t *smpPtr, int32_t numBytes, int16_t *outMin,
         if (smp > max) max = smp;
     }
 
-    min = SAR8(min, 2);
-    max = SAR8(max, 2);
-
-    *outMin = SAMPLE_AREA_Y_CENTER - min;
-    *outMax = SAMPLE_AREA_Y_CENTER - max;
+    *outMin = SAMPLE_AREA_Y_CENTER - SAR8(min, 2);
+    *outMax = SAMPLE_AREA_Y_CENTER - SAR8(max, 2);
 }
 
 static void renderSampleData(void)
@@ -304,7 +302,7 @@ static void renderSampleData(void)
         }
         else
         {
-            // zoomed out (code borrowed from OpenMPT)
+            // zoomed out
 
             oldMin = y1;
             oldMax = y1;

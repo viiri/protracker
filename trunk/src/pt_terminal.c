@@ -442,8 +442,8 @@ void terminalRender(uint32_t *frameBuffer)
 
 int8_t terminalInit(void)
 {
-    uint8_t *writePtr, readByte, bitMask;
-    const uint8_t *readPtr;
+    uint8_t *dst, byte;
+    const uint8_t *src;
     uint32_t i, bit;
 
     charBuffer = (char *)(malloc(TERMINAL_BUFFER_SIZE));
@@ -468,18 +468,15 @@ int8_t terminalInit(void)
     }
 
     // unpack font
+  
+    src = topazFontPacked;
+    dst = topazFont;
 
-    writePtr  = topazFont;
-    readPtr   = topazFontPacked;
-
-    for (i = 0; i < TOPAZ_UNPACKED_LEN / 8; ++i)
+    for (i = 0; i < (TOPAZ_UNPACKED_LEN / 8); ++i)
     {
-        readByte = *readPtr++;
+        byte = src[i];
         for (bit = 0; bit < 8; ++bit)
-        {
-            bitMask = (bit == 0) ? 0x01 : (1 << bit);
-            *writePtr++ = (readByte & bitMask) >> bit;
-        }
+            *dst++ = (byte & (1 << bit)) >> bit;
     }
 
     textFgColor = 0x00C0C0C0;
